@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from questz.canary import check_html, run
+from questz.types import DriftReport, Finding, TransientError
+
+COSMETIC = [
+    "items.attr-order.html",
+    "items.class-churn.html",
+    "items.whitespace.html",
+    "items.extra-rows.html",
+    "items.framework-ids.html",
+    "items.analytics-script.html",
+]
+
+
+def _with_row_count(html: str, count: int) -> str:
+    start = html.index("<tbody>") + len("<tbody>")
+    end = html.index("</tbody>")
+    first_row = html[start:end].split("</tr>")[0] + "</tr>"
+    return html[:start] + first_row * count + html[end:]
+
+
+def _finding(report: DriftReport, kind: str, selector: str | None = None) -> Finding:
+    for finding in report.findings:
+        if finding.kind == kind and (selector is None or finding.selector == selector):
+            return finding
+    raise AssertionError(
+        f"no {kind} finding for {selector!r} in {[f.kind for f in report.findings]}"
+    )
+
+
+def test_the_recorded_page_is_ok(testsite_html, contract):
+    report = check_html(testsite_html("v1/items.html"), contract, target="v1")
+    assert report.status == "OK"
+    assert report.ok
+    assert report.findings == ()
+    assert report.signature_observed == contract.signature
+    assert report.signature_diff == ()
+
+
+@pytest.mark.parametrize("variant", COSMETIC)
+def test_cosmetic_variants_produce_no_findings(testsite_html, contract, variant):
+    report = check_html(testsite_html(f"v1c/{variant}"), contract, target=variant)
+    assert report.status == "OK"
+    assert report.findings == ()
+
+
+def test_the_redeploy_reports_the_three_declared_violations(testsite_html, contract):
+    report = check_html(testsite_html("v2/items.html"), contract, target="v2")
+    assert report.status == "DRIFT"
+    assert report.max_severity == "CRITICAL"
+    price = _finding(
+        report, "missing_selector", 'tr[data-testid="item-row"] td[data-testid="price"]'
+    )
+    stock = _finding(
+        report, "missing_selector", 'tr[data-testid="item-row"] td[data-testid="stock"]'
+    )
+    added = _finding(report, "structure_added")
+    assert price.severity == "CRITICAL"
+    assert price.found == "0"
+    assert stock.severity == "CRITICAL"
+    assert added.severity == "WARNING"
+    assert "col-sku" in added.detail
+    assert _finding(report, "structure_removed").severity == "MAJOR"
+
+
+def test_the_findings_are_ordered_by_severity(testsite_html, contract):
+    report = check_html(testsite_html("v2/items.html"), contract, target="v2")
+    severities = [finding.severity for finding in report.findings]
+    assert severities == ["CRITICAL", "CRITICAL", "MAJOR", "WARNING"]
+
+
+def test_one_missing_selector_is_reported_once(testsite_html, contract):
+    report = check_html(testsite_html("v2/items.html"), contract, target="v2")
+    selectors = [f.selector for f in report.findings if f.kind == "missing_selector"]
+    assert len(selectors) == len(set(selectors))
+
+
+@pytest.mark.parametrize("count", [3, 60])
+def test_a_row_count_outside_the_declared_range_is_major(testsite_html, contract, count):
+    report = check_html(_with_row_count(testsite_html("v1/items.html"), count), contract)
+    finding = _finding(report, "count_out_of_range", 'tr[data-testid="item-row"]')
+    assert report.status == "DRIFT"
+    assert finding.severity == "MAJOR"
+    assert finding.expected == "5 to 50"
+    assert finding.found == str(count)
+
+
+def test_a_price_that_is_not_a_decimal_is_critical(testsite_html, contract):
+    html = testsite_html("v1/items.html").replace(">€19.99<", ">N/A<", 1)
+    report = check_html(html, contract)
+    finding = _finding(report, "field_shape")
+    assert finding.severity == "CRITICAL"
+    assert "N/A" in finding.found
+    assert "'price'" in finding.detail
+
+
+def test_a_stock_value_outside_the_enum_is_critical(testsite_html, contract):
+    html = testsite_html("v1/items.html").replace(">low<", ">backordered<", 1)
+    report = check_html(html, contract)
+    finding = _finding(report, "field_shape")
+    assert finding.severity == "CRITICAL"
+    assert "backordered" in finding.found
+
+
+def test_prices_keep_their_currency_symbol_and_still_parse(testsite_html, contract):
+    html = testsite_html("v1/items.html").replace(">€19.99<", ">1.234,56 EUR<", 1)
+    assert check_html(html, contract).status == "OK"
+
+
+def test_max_severity_orders_critical_above_major_above_warning():
+    def report(*severities):
+        return DriftReport(
+            status="DRIFT",
+            target="t",
+            contract_name="items",
+            contract_version=1,
+            findings=tuple(
+                Finding("structure_added", severity, None, "", "") for severity in severities
+            ),
+            signature_expected="a",
+            signature_observed="b",
+            signature_diff=(),
+            observed_counts=(),
+        )
+
+    assert report().max_severity is None
+    assert report("WARNING").max_severity == "WARNING"
+    assert report("WARNING", "MAJOR").max_severity == "MAJOR"
+    assert report("WARNING", "CRITICAL", "MAJOR").max_severity == "CRITICAL"
+
+
+def test_the_report_survives_a_json_round_trip(testsite_html, contract):
+    report = check_html(testsite_html("v2/items.html"), contract, target="v2")
+    restored = json.loads(json.dumps(report.to_dict()))
+    assert restored == report.to_dict()
+    assert restored["max_severity"] == "CRITICAL"
+    assert restored["status"] == "DRIFT"
+
+
+def test_the_text_report_names_the_status_and_every_selector(testsite_html, contract):
+    text = check_html(testsite_html("v2/items.html"), contract, target="v2").to_text()
+    assert "questz canary: DRIFT" in text
+    assert 'td[data-testid="price"]' in text
+    assert "structure diff:" in text
+
+
+def test_a_navigation_error_is_unavailable_not_drift(fake_driver, contract):
+    report = run(fake_driver(goto_error=TransientError("connection refused")), contract)
+    assert report.status == "UNAVAILABLE"
+    assert report.findings == ()
+    assert "TransientError" in report.reason
+    assert "connection refused" in report.reason
+
+
+def test_a_non_2xx_status_is_unavailable(fake_driver, contract):
+    report = run(fake_driver(status=503), contract)
+    assert report.status == "UNAVAILABLE"
+    assert report.reason == "HTTP 503"
+    assert report.findings == ()
+
+
+def test_an_interstitial_is_blocked_and_lists_what_was_served(fake_driver, testsite_html, contract):
+    driver = fake_driver(html_text=testsite_html("v2i/items.html"), ready=False)
+    report = run(driver, contract)
+    assert report.status == "BLOCKED"
+    assert report.findings == ()
+    assert "consent-gate" in report.reason
+    assert "site-header" in report.reason
+    assert "readiness selector" in report.reason
+
+
+def test_a_readiness_timeout_with_the_container_present_is_drift(
+    fake_driver, testsite_html, contract
+):
+    html = _with_row_count(testsite_html("v1/items.html"), 0)
+    report = run(fake_driver(html_text=html, ready=False), contract)
+    assert report.status == "DRIFT"
+    assert _finding(report, "missing_selector", contract.ready_when).severity == "CRITICAL"
+
+
+def test_a_readiness_timeout_on_a_matching_page_still_fails_closed(
+    fake_driver, testsite_html, contract
+):
+    report = run(fake_driver(html_text=testsite_html("v1/items.html"), ready=False), contract)
+    assert report.status == "DRIFT"
+    finding = _finding(report, "missing_selector", contract.ready_when)
+    assert finding.severity == "MAJOR"
+    assert finding.detail.startswith("readiness")
+
+
+def test_a_good_page_through_the_driver_is_ok(fake_driver, testsite_html, contract):
+    driver = fake_driver(html_text=testsite_html("v1/items.html"))
+    report = run(driver, contract)
+    assert report.status == "OK"
+    assert driver.visited == [contract.url]
+
+
+def test_the_result_is_journaled_with_its_status(
+    fake_driver, testsite_html, contract, journal_sink
+):
+    run(fake_driver(html_text=testsite_html("v2/items.html")), contract, journal=journal_sink)
+    name, level, payload = journal_sink.events[-1]
+    assert name == "canary.result"
+    assert level == "ERROR"
+    assert payload["status"] == "DRIFT"
+    assert payload["max_severity"] == "CRITICAL"
