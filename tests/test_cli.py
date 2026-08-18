@@ -36,6 +36,31 @@ def test_the_redeploy_exits_one_and_names_the_selector(capsys, contract_path, te
     assert "CRITICAL" in stdout
 
 
+def test_fail_on_major_lets_a_warning_only_page_through_with_exit_zero(
+    capsys, contract_path, testsite_file, tmp_path
+):
+    """A wrapper div around the table is one of the four most ordinary benign changes on a
+    real page. It is worth printing and, for some operators, not worth stopping the job."""
+    wrapped = tmp_path / "wrapped.html"
+    wrapped.write_text(
+        testsite_file("v1/items.html")
+        .read_text(encoding="utf-8")
+        .replace(
+            '<table data-testid="items-table" class="grid">',
+            '<div class="table-wrap"><table data-testid="items-table" class="grid">',
+            1,
+        )
+        .replace("</table>", "</table></div>", 1),
+        encoding="utf-8",
+    )
+    strict, strict_out, _ = _check(capsys, contract_path, wrapped)
+    relaxed, relaxed_out, _ = _check(capsys, contract_path, wrapped, "--fail-on", "major")
+    assert strict == cli.EXIT_DRIFT
+    assert relaxed == cli.EXIT_OK
+    assert "structure_moved" in strict_out
+    assert "structure_moved" in relaxed_out, "a threshold decides the exit code, not the report"
+
+
 def test_an_interstitial_exits_three(capsys, contract_path, testsite_file):
     """A page that never arrived and a page that changed need different pager behaviour."""
     code, stdout, _ = _check(capsys, contract_path, testsite_file("v2i/items.html"))

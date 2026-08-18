@@ -22,6 +22,7 @@ from questz import __version__
 from questz.cache import atomic_write_bytes
 from questz.canary import (
     DECIMAL_SEPARATORS,
+    DEFAULT_FAIL_ON,
     FieldRule,
     FieldShape,
     SelectorRule,
@@ -35,7 +36,7 @@ from questz.clock import SYSTEM_CLOCK, Clock, FakeClock
 from questz.driver import PlaywrightDriver
 from questz.journal import read_run, render_report
 from questz.testsite import VARIANTS, serve
-from questz.types import QuestzError
+from questz.types import SEVERITY_ORDER, QuestzError, Severity
 
 __all__ = [
     "BROWSER_HINT",
@@ -149,12 +150,18 @@ def _browser(timeout_ms: int) -> Iterator[PlaywrightDriver]:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     contract = load_contract(args.contract)
+    fail_on = cast(Severity, args.fail_on)
     if args.html is not None:
         html = _read_text(args.html, "html file")
-        report = check_html(html, contract, target=str(args.html))
+        report = check_html(html, contract, target=str(args.html), fail_on=fail_on)
     else:
         with _browser(args.timeout_ms) as driver:
-            report = run(driver, replace(contract, url=args.url), timeout_ms=args.timeout_ms)
+            report = run(
+                driver,
+                replace(contract, url=args.url),
+                timeout_ms=args.timeout_ms,
+                fail_on=fail_on,
+            )
     print(report.to_text())
     if args.json_out is not None:
         _write_json(
@@ -274,6 +281,15 @@ def _build_parser() -> argparse.ArgumentParser:
     source.add_argument("--html", type=Path, help="check a file, no browser needed")
     source.add_argument("--url", help="drive a real browser to this url")
     check.add_argument("--json", dest="json_out", type=Path, help="also write the report as JSON")
+    check.add_argument(
+        "--fail-on",
+        dest="fail_on",
+        type=str.upper,
+        default=DEFAULT_FAIL_ON,
+        choices=list(SEVERITY_ORDER),
+        help="lowest severity that makes this a stop; findings below it are still printed"
+        f" (default {DEFAULT_FAIL_ON.lower()})",
+    )
     check.add_argument("--timeout-ms", type=int, default=5000, dest="timeout_ms")
     check.add_argument("--deterministic", action="store_true", help="fixed clock in the JSON")
     check.set_defaults(handler=_cmd_check)

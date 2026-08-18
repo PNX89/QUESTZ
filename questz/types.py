@@ -101,6 +101,9 @@ class DriftReport:
     signature_diff: tuple[str, ...]
     observed_counts: tuple[tuple[str, int], ...]
     reason: str = ""
+    # The severity that had to be reached for this to be a stop. Recorded rather than
+    # assumed, because a report read a week later has to say what it was judged against.
+    fail_on: Severity = "WARNING"
 
     @property
     def ok(self) -> bool:
@@ -118,6 +121,7 @@ class DriftReport:
             "target": self.target,
             "contract_name": self.contract_name,
             "contract_version": self.contract_version,
+            "fail_on": self.fail_on,
             "findings": [f.to_dict() for f in self.findings],
             "max_severity": self.max_severity,
             "signature_expected": self.signature_expected,
@@ -145,6 +149,10 @@ class DriftReport:
                 lines.append(f"  {'':<9} {'':<18} {finding.detail}")
         if not self.findings:
             lines.append("  none")
+        elif self.status == "OK":
+            lines.append(
+                f"  nothing reaches --fail-on {self.fail_on.lower()}, so this is not a stop"
+            )
         lines.append("")
         if self.signature_expected == self.signature_observed:
             lines.append(f"signature: {self.signature_observed[:12]} matches the baseline")

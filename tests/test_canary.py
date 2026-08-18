@@ -98,6 +98,52 @@ def test_a_wrapper_div_is_reported_as_one_move_not_eleven_deletions(testsite_htm
     assert report.max_severity == "WARNING"
 
 
+def _with_badge(html: str) -> str:
+    """The most ordinary benign change on a commerce page: a visible label appears inside
+    a cell the contract depends on."""
+    return html.replace(
+        'class="cell name">Anodised bracket',
+        'class="cell name"><span class="badge">Sale</span>Anodised bracket',
+        1,
+    )
+
+
+def test_a_benign_addition_gates_by_default_and_stops_gating_at_a_higher_threshold(
+    testsite_html, contract
+):
+    """Fail closed by default, but not firing on changes that do not matter is what decides
+    whether anyone leaves the check switched on, so the threshold is an argument."""
+    html = _with_badge(testsite_html("v1/items.html"))
+    default = check_html(html, contract, target="badge")
+    relaxed = check_html(html, contract, target="badge", fail_on="MAJOR")
+    assert default.status == "DRIFT"
+    assert relaxed.status == "OK"
+    assert relaxed.findings == default.findings, "raising the bar hides nothing, it only stops"
+    assert relaxed.max_severity == "WARNING"
+    assert "not a stop" in relaxed.to_text()
+
+
+def test_a_critical_finding_still_stops_at_every_threshold(testsite_html, contract):
+    for fail_on in ("WARNING", "MAJOR", "CRITICAL"):
+        report = check_html(testsite_html("v2/items.html"), contract, target="v2", fail_on=fail_on)
+        assert report.status == "DRIFT", fail_on
+
+
+def test_the_threshold_the_report_was_judged_against_is_recorded(testsite_html, contract):
+    report = check_html(testsite_html("v1/items.html"), contract, fail_on="CRITICAL")
+    assert report.fail_on == "CRITICAL"
+    assert report.to_dict()["fail_on"] == "CRITICAL"
+
+
+def test_a_page_that_never_became_ready_stops_whatever_the_threshold_says(
+    fake_driver, testsite_html, contract
+):
+    """The threshold judges what changed on a page that arrived. One that never did is a
+    different question, and it is not the operator's to relax here."""
+    driver = fake_driver(html_text=testsite_html("v1/items.html"), ready=False)
+    assert run(driver, contract, fail_on="CRITICAL").status == "DRIFT"
+
+
 def test_a_node_that_really_left_is_still_reported_as_gone(testsite_html, contract):
     """The move detector must not launder a deletion: only nodes with a matching line at a
     different depth are re-nested, everything else is still missing."""

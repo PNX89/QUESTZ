@@ -88,10 +88,15 @@ The exit code is the interface: "the site changed" and "the site is down" need d
 
 | Code | Status | Cause |
 | --- | --- | --- |
-| 0 | `OK` | page loaded, container present, no findings |
+| 0 | `OK` | page loaded, container present, nothing found at or above the threshold |
 | 1 | `DRIFT` | page loaded and no longer matches the contract |
-| 2 | usage | bad flag, missing contract, unsupported selector |
+| 2 | usage | bad flag, unreadable or malformed contract, unsupported selector |
 | 3 | `UNAVAILABLE` or `BLOCKED` | navigation failed, non 2xx status, or something else was served |
+
+Every finding is always printed. `--fail-on` decides which of them is a stop: the default is
+`warning`, so anything found gates, and `--fail-on major` is for the operator who has decided a new
+node inside the container is not worth holding a data job for. A page that never became ready is a
+stop at any threshold.
 
 The same command against all three bundled pages, run by `tests/test_readme.py`, which reads them out of this file:
 

@@ -26,6 +26,8 @@ from questz.types import (
 
 __all__ = [
     "CONTRACT_FORMAT",
+    "DECIMAL_SEPARATORS",
+    "DEFAULT_FAIL_ON",
     "Contract",
     "FieldRule",
     "SelectorRule",
@@ -42,6 +44,9 @@ CONTRACT_FORMAT = 1
 FieldShape = Literal["decimal", "integer", "text", "enum"]
 _SHAPES: tuple[str, ...] = ("decimal", "integer", "text", "enum")
 DECIMAL_SEPARATORS: tuple[str, ...] = (".", ",")
+# Fail closed by default: every finding gates. `--fail-on major` is for the operator who
+# has decided a new node inside the container is not worth stopping a data job for.
+DEFAULT_FAIL_ON: Severity = "WARNING"
 _CONTRACT_KEYS = (
     "baseline",
     "container",
@@ -562,7 +567,15 @@ def _top_level_testids(root: Element) -> list[str]:
     return values
 
 
-def check_html(html: str, contract: Contract, *, target: str = "") -> DriftReport:
+def _gates(findings: Sequence[Finding], fail_on: Severity) -> bool:
+    """Whether these findings stop the job. Everything found is always reported; this is
+    only the line between "worth knowing" and "do not write today's file"."""
+    return any(SEVERITY_ORDER[finding.severity] >= SEVERITY_ORDER[fail_on] for finding in findings)
+
+
+def check_html(
+    html: str, contract: Contract, *, target: str = "", fail_on: Severity = DEFAULT_FAIL_ON
+) -> DriftReport:
     root = parse(html)
     structure = normalize_tree(root, container=contract.container)
     if not select(root, contract.container):
@@ -579,6 +592,7 @@ def check_html(html: str, contract: Contract, *, target: str = "") -> DriftRepor
             signature_diff=(),
             observed_counts=(),
             reason=f"{absent}; data-testid served instead: {served}",
+            fail_on=fail_on,
         )
     findings = _dedupe(
         _selector_findings(root, contract)
@@ -587,7 +601,7 @@ def check_html(html: str, contract: Contract, *, target: str = "") -> DriftRepor
     )
     findings.sort(key=lambda finding: -SEVERITY_ORDER[finding.severity])
     return DriftReport(
-        status="DRIFT" if findings else "OK",
+        status="DRIFT" if _gates(findings, fail_on) else "OK",
         target=target,
         contract_name=contract.name,
         contract_version=contract.version,
@@ -596,6 +610,7 @@ def check_html(html: str, contract: Contract, *, target: str = "") -> DriftRepor
         signature_observed=structure.signature,
         signature_diff=diff(contract.baseline, structure.lines),
         observed_counts=structure.counts,
+        fail_on=fail_on,
     )
 
 
@@ -638,6 +653,7 @@ def run(
     *,
     timeout_ms: int = 5000,
     journal: JournalSink | None = None,
+    fail_on: Severity = DEFAULT_FAIL_ON,
 ) -> DriftReport:
     """Fails closed four different ways, because "the site changed" and "the site is down"
     need different pager behaviour."""
@@ -652,7 +668,7 @@ def run(
         _record_result(journal, report)
         return report
     ready = driver.wait_for(contract.ready_when, timeout_ms=timeout_ms)
-    report = check_html(driver.html(), contract, target=contract.url)
+    report = check_html(driver.html(), contract, target=contract.url, fail_on=fail_on)
     if not ready:
         if report.status == "BLOCKED":
             never = f"readiness selector {contract.ready_when!r} never appeared"
@@ -672,6 +688,8 @@ def run(
             findings = sorted(
                 (timed_out, *report.findings), key=lambda finding: -SEVERITY_ORDER[finding.severity]
             )
+            # A page that never became ready is a stop whatever the threshold says: the
+            # threshold judges what changed on a page that arrived.
             report = replace(report, status="DRIFT", findings=tuple(findings))
     _record_result(journal, report)
     return report
