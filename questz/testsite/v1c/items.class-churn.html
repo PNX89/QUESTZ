@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalogue</title>
+<link rel="stylesheet" href="styles.css">
+<script>
+  if (sessionStorage.getItem("questz_auth") !== "1") {
+    location.replace("login.html");
+  }
+</script>
+</head>
+<body>
+<header data-testid="site-header">
+  <span class="brand">Bench Supply</span>
+  <nav class="nav"><a href="index.html">Home</a> <a href="items.html">Catalogue</a></nav>
+</header>
+<main data-testid="items" class="wrap">
+  <h1>Catalogue</h1>
+  <p class="sc-bdVaJa hHroLd">Bench consumables and hand tools.</p>
+  <table data-testid="items-table" class="css-1q2w3e">
+    <thead>
+    <tr data-testid="header-row" class="head">
+      <th data-testid="col-name" class="th">Part</th>
+      <th data-testid="col-price" class="th">Price</th>
+      <th data-testid="col-stock" class="th">Availability</th>
+    </tr>
+    </thead>
+    <tbody>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Anodised bracket</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€19.99</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Bench vice jaw</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€42.50</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Cable gland M20</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€3.75</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Digital caliper</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€89.00</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">low</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Epoxy resin 500g</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€24.95</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Feeler gauge set</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€12.40</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">out-of-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Grub screw pack</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€5.60</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Heat shrink kit</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€17.25</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">low</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Insulated driver</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€31.80</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Jointing compound</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€9.15</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Knurled thumb nut</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€2.30</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">out-of-stock</td>
+      </tr>
+      <tr data-testid="item-row" class="css-9f8e7d">
+        <td data-testid="name" class="css-1x2y3z cell">Lock washer M8</td>
+        <td data-testid="price" class="sc-hKgILt jXAeLl">€1.95</td>
+        <td data-testid="stock" class="tw-3d9f2a cell">in-stock</td>
+      </tr>
+    </tbody>
+  </table>
+</main>
+<footer class="foot">
+  <small>Static demo target. Served from loopback by the bundled test site.</small>
+</footer>
+</body>
+</html>

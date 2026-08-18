@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header data-testid="site-header">
+  <span class="brand">Bench Supply</span>
+</header>
+<main data-testid="login" class="wrap">
+  <h1>Sign in</h1>
+  <form data-testid="login-form" class="form">
+    <label for="username">User</label>
+    <input data-testid="username" id="username" name="username" type="text" autocomplete="off">
+    <label for="password">Password</label>
+    <input data-testid="password" id="password" name="password" type="password" autocomplete="off">
+    <button data-testid="submit" type="submit" class="btn">Sign in</button>
+  </form>
+  <p data-testid="login-error" class="error" hidden></p>
+  <p class="hint">Demo credentials: demo / demo-password</p>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

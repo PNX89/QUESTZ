@@ -1,0 +1,11 @@
+:root { --ink: #101820; --rule: #e2e6ea; --accent: #0b6; }
+* { box-sizing: border-box; }
+body { font-family: Inter, system-ui, sans-serif; font-size: 15px; color: var(--ink); margin: 0; }
+.wrap { margin-inline: auto; max-width: 64rem; padding: 1.25rem 1.5rem; }
+table.grid { border-collapse: separate; border-spacing: 0; inline-size: 100%; }
+table.grid th { text-transform: uppercase; letter-spacing: .04em; font-size: 12px; }
+table.grid td { border-block-end: 1px solid var(--rule); padding-block: .45rem; }
+.stock-panel { margin-block-start: 1rem; }
+.chips { display: flex; flex-wrap: wrap; gap: .35rem; list-style: none; padding: 0; }
+.chip { background: #f1f4f6; border-radius: 999px; padding: .1rem .6rem; }
+.foot { color: #62707d; padding: 1.5rem; }

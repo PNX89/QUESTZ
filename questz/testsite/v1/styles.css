@@ -1,0 +1,8 @@
+:root { --ink: #14202b; --line: #d8dee4; }
+body { font: 15px/1.5 system-ui, sans-serif; color: var(--ink); margin: 0; }
+.wrap { max-width: 62rem; margin: 0 auto; padding: 1.5rem; }
+.grid { border-collapse: collapse; width: 100%; }
+.grid th, .grid td { border-bottom: 1px solid var(--line); padding: .4rem .6rem; text-align: left; }
+.price { text-align: right; }
+.btn { padding: .4rem .9rem; }
+.foot { padding: 1.5rem; color: #5b6a78; }
