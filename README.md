@@ -248,8 +248,14 @@ Comments, doctype and the subtrees of `script`, `style`, `svg` and `noscript` ar
 analytics tag a non event. Runs of identical adjacent siblings collapse to one line marked `x*`, with the number
 recorded separately in `counts`, because 12 rows and 13 rows are different trees and without this the false positive
 rate on any list page approaches 100 percent. The check is scoped to a container selector, so ads, cookie banners,
-personalization and A/B variants outside it are invisible to it. Locale and currency formatting is handled one layer
-down, by the single decimal parser that both the contract and the job call.
+personalization and A/B variants outside it are invisible to it.
+
+**A number that reads two ways is refused, not guessed.** `parse_decimal` is the single parser the contract's field
+check and the job's extraction both call, so a value the canary passed is a value the job can read. It strips currency
+decoration, accepts `.` `,` and thin spaces as grouping, and returns nothing for anything with two readings: `1.234` is
+a thousand euros in Frankfurt and one euro twenty-three in Dublin, and a parser that picks one writes a clean CSV that
+is wrong by 1000x. A contract whose target ships values like that declares `decimal_separator` (`questz canary record
+--decimal-separator .`) and they parse; without it they surface as a `field_shape` finding.
 
 **Contracts are JSON, not YAML, and the baseline is recorded rather than hand written.** The core has no third party
 dependencies, stdlib `tomllib` is read only so `record` could not write TOML, and PyYAML would be a dependency for one

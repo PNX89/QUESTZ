@@ -127,6 +127,44 @@ def test_unparseable_json_raises_a_readable_error(tmp_path):
         load(path)
 
 
+def test_the_decimal_separator_round_trips_and_defaults_to_undeclared(tmp_path, testsite_html):
+    path = tmp_path / "items.json"
+    save(_record(testsite_html("v1/items.html")), path)
+    assert load(path).decimal_separator is None
+    assert '"decimal_separator": null' in path.read_text(encoding="utf-8")
+
+    declared = record(
+        testsite_html("v1/items.html"),
+        name="items",
+        url="http://127.0.0.1:8000/items.html",
+        container=CONTAINER,
+        ready_when=ROW,
+        required=[ROW],
+        decimal_separator=",",
+    )
+    save(declared, path)
+    assert load(path).decimal_separator == ","
+
+
+def test_a_contract_written_before_the_decimal_separator_existed_still_loads(tmp_path, contract):
+    path = tmp_path / "items.json"
+    save(contract, path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    del raw["decimal_separator"]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    assert load(path).decimal_separator is None
+
+
+def test_an_unusable_decimal_separator_raises_naming_the_alternatives(tmp_path, contract):
+    path = tmp_path / "items.json"
+    save(contract, path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["decimal_separator"] = "'"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ContractError, match="decimal_separator"):
+        load(path)
+
+
 def test_a_contract_in_the_wrong_encoding_raises_a_readable_error(tmp_path):
     """UnicodeDecodeError is a ValueError, so it is neither an OSError nor a
     JSONDecodeError. Uncaught, it reaches the operator as a traceback."""

@@ -16,6 +16,7 @@
     "4|td|data-testid=stock"
   ],
   "container": "[data-testid=\"items\"]",
+  "decimal_separator": null,
   "fields": [
     {
       "allowed": [],

@@ -68,16 +68,17 @@ class JobResult:
     detail: str = ""
 
 
-def _price(text: str) -> Decimal:
-    """The canary validated this cell with the same parser. If it did not, because the
-    contract declares no price field, refusing is still better than a plausible number."""
-    value = parse_decimal(text)
+def _price(text: str, separator: str | None) -> Decimal:
+    """The canary validated this cell with the same parser, called the same way, including
+    the contract's declared decimal separator. If it did not, because the contract declares
+    no price field, refusing is still better than a plausible number."""
+    value = parse_decimal(text, decimal_separator=separator)
     if value is None:
         raise PermanentError(f"price cell {text!r} does not parse as a decimal")
     return value
 
 
-def extract(html: str) -> tuple[Row, ...]:
+def extract(html: str, *, decimal_separator: str | None = None) -> tuple[Row, ...]:
     """Only ever reached after an OK report, so every declared cell is present."""
     rows: list[Row] = []
     for line in select(parse(html), ROW_SELECTOR):
@@ -85,7 +86,7 @@ def extract(html: str) -> tuple[Row, ...]:
         rows.append(
             Row(
                 name=cells["name"][0].text,
-                price=_price(cells["price"][0].text),
+                price=_price(cells["price"][0].text, decimal_separator),
                 stock=cells["stock"][0].text,
             )
         )
@@ -230,7 +231,7 @@ def run_job(
             stale_seconds=stale_seconds,
         )
     with journal.step("extract"):
-        rows = extract(html)
+        rows = extract(html, decimal_separator=contract.decimal_separator)
         csv_path = write_csv(rows, out_dir / "items.csv")
         journal.event(
             "artifact.saved", artifact=str(csv_path), kind="csv", bytes=csv_path.stat().st_size

@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
@@ -39,6 +40,7 @@ CONTRACT_FORMAT = 1
 
 FieldShape = Literal["decimal", "integer", "text", "enum"]
 _SHAPES: tuple[str, ...] = ("decimal", "integer", "text", "enum")
+DECIMAL_SEPARATORS: tuple[str, ...] = (".", ",")
 _CONTRACT_KEYS = (
     "baseline",
     "container",
@@ -53,6 +55,19 @@ _CONTRACT_KEYS = (
     "version",
 )
 _DETAIL_NODES = 4
+
+# Currency decoration, stripped from both ends: "USD 19.99", "19,99 EUR", "-€5.00". Digits
+# and the sign are all that may survive, so "1e3" keeps its "e" and fails the grammar below
+# rather than quietly becoming 13.
+_SPACES = str.maketrans(dict.fromkeys("\u00a0\u202f\u2009\u2007", " "))
+_DECORATION_HEAD = re.compile(r"^([+-]?)[^0-9+-]*")
+_DECORATION_TAIL = re.compile(r"[^0-9]+$")
+_NUMERIC = re.compile(r"[+-]?[0-9]+(?:[., ][0-9]+)*")
+_SEPARATED = re.compile(r"([., ])")
+
+
+class _AmbiguousValue(Exception):
+    """A number that reads two ways. Never raised past this module."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,12 +100,16 @@ class Contract:
     secret_selectors: tuple[str, ...]
     signature: str
     baseline: tuple[str, ...]
+    # None means "refuse a value that reads two ways" rather than "guess". A target that
+    # ships "1.234" has to say which one it means.
+    decimal_separator: str | None = None
 
 
 def _contract_dict(contract: Contract) -> dict[str, Any]:
     return {
         "baseline": list(contract.baseline),
         "container": contract.container,
+        "decimal_separator": contract.decimal_separator,
         "fields": [
             {
                 "allowed": list(rule.allowed),
@@ -162,7 +181,19 @@ def load(path: Path) -> Contract:
         secret_selectors=tuple(str(entry) for entry in raw["secret_selectors"]),
         signature=str(raw["signature"]),
         baseline=tuple(str(entry) for entry in raw["baseline"]),
+        decimal_separator=_decimal_separator(raw.get("decimal_separator"), path),
     )
+
+
+def _decimal_separator(raw: Any, path: Path) -> str | None:
+    """Optional, so a contract written before this key existed still loads."""
+    if raw is None:
+        return None
+    if raw not in DECIMAL_SEPARATORS:
+        raise ContractError(
+            f"{path}: decimal_separator {raw!r} is not one of {list(DECIMAL_SEPARATORS)}"
+        )
+    return str(raw)
 
 
 def _severity(raw: Any, path: Path) -> Severity:
@@ -220,6 +251,7 @@ def record(
     required: Sequence[str | SelectorRule],
     fields: Sequence[FieldRule] = (),
     secret_selectors: Sequence[str] = (),
+    decimal_separator: str | None = None,
     version: int = 1,
 ) -> Contract:
     """Derive a contract from a page that is known good.
@@ -249,6 +281,7 @@ def record(
         secret_selectors=tuple(secret_selectors),
         signature=structure.signature,
         baseline=structure.lines,
+        decimal_separator=decimal_separator,
     )
 
 
@@ -258,33 +291,74 @@ def _range_text(rule: SelectorRule) -> str:
     return f"{rule.min_count} to {rule.max_count}"
 
 
-def parse_decimal(text: str) -> Decimal | None:
+def _grouped(digits: list[str], separators: list[str]) -> bool:
+    """Digits left of the decimal point: 1 to 3, then groups of exactly 3."""
+    if not separators:
+        return True
+    return len(digits[0]) <= 3 and all(len(group) == 3 for group in digits[1:])
+
+
+def _point_index(separators: list[str], last_group: str, declared: str | None) -> int | None:
+    """Which separator is the decimal point. None means every one of them is grouping.
+
+    Raises when the value admits both readings, which is the whole reason this function
+    exists as its own step.
+    """
+    if declared is not None:
+        if separators[-1] == declared:
+            return len(separators) - 1
+        if declared in separators:
+            # Declared as the decimal point, used here between two groups of digits.
+            raise _AmbiguousValue(declared)
+        return None
+    if separators[-1] == " ":
+        return None
+    if len(last_group) != 3:
+        # Three digits is the only width that could have been a thousands group.
+        return len(separators) - 1
+    if len({char for char in separators if char != " "}) > 1:
+        # "1.234,567": two different characters cannot both be grouping.
+        return len(separators) - 1
+    if len(separators) > 1:
+        return None
+    raise _AmbiguousValue(separators[-1])
+
+
+def parse_decimal(text: str, *, decimal_separator: str | None = None) -> Decimal | None:
     """The one parser both sides use. A contract that validates a price with different
-    rules from the job that reads it is a contract that proves nothing."""
-    cleaned = "".join(char for char in text.strip() if char.isdigit() or char in ".,+-")
-    if not cleaned or not cleaned.lstrip("+-")[:1].isdigit():
+    rules from the job that reads it is a contract that proves nothing.
+
+    Returns None for anything it cannot read exactly one way, ambiguity included: "1.234"
+    is a thousand euros in Frankfurt and one euro twenty-three in Dublin. Guessing turns a
+    1000x error into a clean CSV, which is precisely the failure this repo exists to stop,
+    so a contract declares `decimal_separator` when its target ships values like that.
+    """
+    cleaned = _DECORATION_TAIL.sub("", _DECORATION_HEAD.sub(r"\1", text.translate(_SPACES).strip()))
+    if _NUMERIC.fullmatch(cleaned) is None:
         return None
-    if cleaned.count(".") > 1 and "," not in cleaned:
-        cleaned = cleaned.replace(".", "")
-    elif cleaned.count(",") > 1 and "." not in cleaned:
-        cleaned = cleaned.replace(",", "")
-    elif "." in cleaned and "," in cleaned:
-        group = "," if cleaned.rfind(".") > cleaned.rfind(",") else "."
-        cleaned = cleaned.replace(group, "")
-    cleaned = cleaned.replace(",", ".")
+    sign, body = (cleaned[0], cleaned[1:]) if cleaned[0] in "+-" else ("", cleaned)
+    parts = _SEPARATED.split(body)
+    digits, separators = parts[0::2], parts[1::2]
+    if not separators:
+        return Decimal(sign + body)
     try:
-        return Decimal(cleaned)
-    except InvalidOperation:
+        point = _point_index(separators, digits[-1], decimal_separator)
+    except _AmbiguousValue:
         return None
+    if point is None:
+        return Decimal(sign + "".join(digits)) if _grouped(digits, separators) else None
+    if separators[point] in separators[:point] or not _grouped(digits[:-1], separators[:-1]):
+        return None
+    return Decimal(f"{sign}{''.join(digits[:-1])}.{digits[-1]}")
 
 
-def _shape_ok(rule: FieldRule, text: str) -> bool:
+def _shape_ok(rule: FieldRule, text: str, separator: str | None) -> bool:
     value = text.strip()
     if rule.shape == "text":
         return bool(value)
     if rule.shape == "enum":
         return value in rule.allowed
-    number = parse_decimal(value)
+    number = parse_decimal(value, decimal_separator=separator)
     if number is None:
         return False
     if rule.shape == "integer":
@@ -340,7 +414,11 @@ def _field_findings(root: Element, contract: Contract) -> list[Finding]:
                 )
             )
             continue
-        bad = [element.text for element in elements if not _shape_ok(rule, element.text)]
+        bad = [
+            element.text
+            for element in elements
+            if not _shape_ok(rule, element.text, contract.decimal_separator)
+        ]
         if bad:
             findings.append(
                 Finding(

@@ -20,7 +20,15 @@ from typing import cast
 
 from questz import __version__
 from questz.cache import atomic_write_bytes
-from questz.canary import FieldRule, FieldShape, SelectorRule, check_html, record, run
+from questz.canary import (
+    DECIMAL_SEPARATORS,
+    FieldRule,
+    FieldShape,
+    SelectorRule,
+    check_html,
+    record,
+    run,
+)
 from questz.canary import load as load_contract
 from questz.canary import save as save_contract
 from questz.clock import SYSTEM_CLOCK, Clock, FakeClock
@@ -185,6 +193,7 @@ def _cmd_record(args: argparse.Namespace) -> int:
         required=[_parse_selector(text) for text in args.selector],
         fields=[_parse_field(text) for text in args.fields],
         secret_selectors=tuple(args.secret),
+        decimal_separator=args.decimal_separator,
     )
     save_contract(contract, args.out)
     counts = ", ".join(f"{rule.selector} {rule.min_count}" for rule in contract.required)
@@ -282,6 +291,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--field", action="append", default=[], dest="fields", metavar="NAME:SEL:SHAPE"
     )
     recorder.add_argument("--secret", action="append", default=[], metavar="SEL")
+    recorder.add_argument(
+        "--decimal-separator",
+        dest="decimal_separator",
+        choices=DECIMAL_SEPARATORS,
+        help="which character this target uses as the decimal point;"
+        " without it a value like '1.234' is refused rather than guessed",
+    )
     recorder.add_argument("--timeout-ms", type=int, default=5000, dest="timeout_ms")
     recorder.set_defaults(handler=_cmd_record)
 

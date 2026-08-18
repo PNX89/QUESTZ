@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
-from questz.canary import check_html, run
+from questz.canary import check_html, parse_decimal, run
 from questz.types import DriftReport, Finding, TransientError
 
 COSMETIC = [
@@ -110,6 +111,60 @@ def test_a_stock_value_outside_the_enum_is_critical(testsite_html, contract):
 def test_prices_keep_their_currency_symbol_and_still_parse(testsite_html, contract):
     html = testsite_html("v1/items.html").replace(">€19.99<", ">1.234,56 EUR<", 1)
     assert check_html(html, contract).status == "OK"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("€19.99", "19.99"),
+        ("USD 19.99", "19.99"),
+        ("19,99 EUR", "19.99"),
+        ("-€5.00", "-5.00"),
+        ("1.234,56", "1234.56"),
+        ("1,234.56", "1234.56"),
+        ("1 234,56", "1234.56"),
+        ("1.234.567", "1234567"),
+        ("12.345.678,90", "12345678.90"),
+        ("12345.67", "12345.67"),
+        ("1234", "1234"),
+    ],
+)
+def test_the_decimal_parser_reads_every_unambiguous_shape(text, expected):
+    assert str(parse_decimal(text)) == expected
+
+
+@pytest.mark.parametrize("text", ["", "N/A", "1e3", "1.2.3.4", "1.23.456", "--5", "12,34,56"])
+def test_the_decimal_parser_refuses_what_it_cannot_read(text):
+    """'1e3' is the interesting one: a parser that filters the string down to digits and
+    separators turns it into 13, and 13 is a plausible price."""
+    assert parse_decimal(text) is None
+
+
+@pytest.mark.parametrize("text", ["1.234", "1,234", "€1.234"])
+def test_a_value_that_reads_two_ways_is_refused_rather_than_guessed(text):
+    """A thousand euros, or one euro twenty-three. Guessing writes a clean CSV that is
+    wrong by 1000x, which is the exact failure this repo exists to catch."""
+    assert parse_decimal(text) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "separator", "expected"),
+    [("1.234", ".", "1.234"), ("1.234", ",", "1234"), ("1,234", ",", "1.234")],
+)
+def test_a_declared_decimal_separator_resolves_the_ambiguity(text, separator, expected):
+    assert str(parse_decimal(text, decimal_separator=separator)) == expected
+
+
+def test_an_ambiguous_price_is_a_finding_rather_than_a_thousandfold_error(testsite_html, contract):
+    html = testsite_html("v1/items.html").replace(">€19.99<", ">€1.234<", 1)
+    report = check_html(html, contract)
+    assert report.status == "DRIFT"
+    assert _finding(report, "field_shape").severity == "CRITICAL"
+
+
+def test_the_same_price_passes_once_the_contract_declares_its_separator(testsite_html, contract):
+    html = testsite_html("v1/items.html").replace(">€19.99<", ">€1.234<", 1)
+    assert check_html(html, replace(contract, decimal_separator=".")).status == "OK"
 
 
 def test_max_severity_orders_critical_above_major_above_warning():
