@@ -17,6 +17,7 @@ import scenarios
 
 from questz.breaker import Breaker, BreakerPolicy
 from questz.cache import Cache
+from questz.canary import check_html
 from questz.journal import Journal
 from questz.types import QuestzError
 
@@ -168,12 +169,27 @@ def test_an_open_breaker_refuses_before_the_page_is_requested(
 def test_the_detection_table_covers_every_fixture_and_counts_them():
     table = scenarios.table_markdown()
     body = [line for line in table.splitlines() if line.startswith("| `")]
-    assert len(body) == len(scenarios.TABLE_ROWS) == 8
+    assert len(body) == len(scenarios.TABLE_ROWS) == 12
     assert all(relative in table for relative, _ in scenarios.TABLE_ROWS)
     assert table.splitlines()[-1] == (
-        "Structural variants flagged 1/1, cosmetic variants flagged 0/6,"
-        " declared contract violations found in v2 3/3."
+        "Structural variants flagged 1/1, declared contract violations found in v2 3/3."
+        " Of 10 cosmetic variants 7 produce no findings at all;"
+        " the default threshold stops on 3 of them, `--fail-on major` on 0."
     )
+
+
+@pytest.mark.parametrize(
+    "variant", ["items.badge-span.html", "items.wrapper-div.html", "items.consent-banner.html"]
+)
+def test_the_fixtures_this_detector_fails_stay_in_the_table_as_warnings(
+    testsite_html, contract, variant
+):
+    """The honest half of the table: a benign visible change inside the container does
+    produce findings. They stay WARNING so a threshold can answer them, and if one ever
+    reached MAJOR the table would have stopped describing the tool."""
+    report = check_html(testsite_html(f"v1c/{variant}"), contract, target=variant)
+    assert report.max_severity == "WARNING"
+    assert f"v1c/{variant}" in [relative for relative, _ in scenarios.TABLE_ROWS]
 
 
 def test_the_table_is_stable_across_two_generations():

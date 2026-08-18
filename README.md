@@ -109,21 +109,27 @@ uv run questz canary check --contract examples/contracts/items.json --html quest
 ## Detection results
 
 Firing when the DOM changes is table stakes. Not firing when it changes in a way that does not matter is what decides
-whether anyone leaves the check switched on.
+whether anyone leaves the check switched on. So the fixture set includes the axis this detector is weakest on, an
+element appearing inside the container, and the table reports what happens rather than a pass rate. Twelve fixtures
+authored by the same person who wrote the detector is a regression suite, not a benchmark, and it is offered as one.
 
 <!-- detection-table -->
-| Variant | Change | Expected | Status | Findings | Max severity |
-| --- | --- | --- | --- | --- | --- |
-| `v1/items.html` | the recorded page | OK | OK | 0 | none |
-| `v1c/items.attr-order.html` | attribute order changed | OK | OK | 0 | none |
-| `v1c/items.class-churn.html` | build hashed class names | OK | OK | 0 | none |
-| `v1c/items.whitespace.html` | markup reflowed | OK | OK | 0 | none |
-| `v1c/items.extra-rows.html` | 13 rows instead of 12 | OK | OK | 0 | none |
-| `v1c/items.framework-ids.html` | framework ids and an inline style | OK | OK | 0 | none |
-| `v1c/items.analytics-script.html` | analytics script and a comment added | OK | OK | 0 | none |
-| `v2/items.html` | price renamed, stock moved out of the row, a column added | DRIFT | DRIFT | 4 | CRITICAL |
+| Variant | Change | Expected | Default | At `major` | Findings | Max severity |
+| --- | --- | --- | --- | --- | --- | --- |
+| `v1/items.html` | the recorded page | OK | OK | OK | 0 | none |
+| `v1c/items.attr-order.html` | attribute order changed | OK | OK | OK | 0 | none |
+| `v1c/items.class-churn.html` | build hashed class names | OK | OK | OK | 0 | none |
+| `v1c/items.whitespace.html` | markup reflowed | OK | OK | OK | 0 | none |
+| `v1c/items.extra-rows.html` | 13 rows instead of 12 | OK | OK | OK | 0 | none |
+| `v1c/items.framework-ids.html` | framework ids and an inline style | OK | OK | OK | 0 | none |
+| `v1c/items.analytics-script.html` | analytics script and a comment added | OK | OK | OK | 0 | none |
+| `v1c/items.hydration-template.html` | a hydration payload in a template | OK | OK | OK | 0 | none |
+| `v1c/items.badge-span.html` | a Sale badge inside one product name | OK | DRIFT | OK | 1 | WARNING |
+| `v1c/items.wrapper-div.html` | a scroll wrapper around the table | OK | DRIFT | OK | 2 | WARNING |
+| `v1c/items.consent-banner.html` | a consent banner inside the container | OK | DRIFT | OK | 1 | WARNING |
+| `v2/items.html` | price renamed, stock moved out of the row, a column added | DRIFT | DRIFT | DRIFT | 4 | CRITICAL |
 
-Structural variants flagged 1/1, cosmetic variants flagged 0/6, declared contract violations found in v2 3/3.
+Structural variants flagged 1/1, declared contract violations found in v2 3/3. Of 10 cosmetic variants 7 produce no findings at all; the default threshold stops on 3 of them, `--fail-on major` on 0.
 <!-- /detection-table -->
 
 Regenerate with `uv run python examples/scenarios.py --table`; a test compares it against a fresh generation.
