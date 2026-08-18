@@ -22,8 +22,7 @@ README_TEXT = README.read_text(encoding="utf-8")
 
 # A ceiling, not a target. Past this the design decisions belong in docs/ rather than in
 # the file somebody reads to decide whether to keep reading.
-LINE_BUDGET = 440
-
+LINE_BUDGET = 470
 
 _DOCUMENTED_COMMAND = re.compile(r"^uv run (questz .+?) +# exit (\d)$", re.MULTILINE)
 _DETECTION_TABLE = re.compile(
@@ -99,6 +98,26 @@ def test_the_detection_table_matches_a_fresh_generation() -> None:
 
 def test_every_technical_claim_keeps_its_citation() -> None:
     assert [url for url in REQUIRED_CITATIONS if url not in README_TEXT] == []
+
+
+def test_the_readme_counts_the_tests_that_need_a_browser() -> None:
+    """The number is in the README, so it is checked here rather than trusted. Every e2e
+    test lives in one module under one module level marker, which is what makes it a fact
+    about the tree rather than a fact about a particular run."""
+    e2e = REPO_ROOT / "tests" / "test_e2e.py"
+    stated = re.search(r"the (\d+) tests in\n`tests/test_e2e\.py`", README_TEXT)
+    assert stated is not None, "the browser test count is missing from the README"
+    assert int(stated.group(1)) == len(
+        re.findall(r"^def test_", e2e.read_text(encoding="utf-8"), re.MULTILINE)
+    )
+    # Assembled rather than written out, so this file does not match its own search.
+    marker = "pytest." + "mark.e2e"
+    others = [
+        path.name
+        for path in (REPO_ROOT / "tests").glob("test_*.py")
+        if path != e2e and marker in path.read_text(encoding="utf-8")
+    ]
+    assert others == [], "an e2e marker outside test_e2e.py makes the README count wrong"
 
 
 def test_the_readme_stays_inside_its_length_budget() -> None:

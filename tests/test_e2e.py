@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import itertools
 import random
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pricewatch
@@ -19,12 +22,17 @@ from questz.breaker import Breaker, BreakerPolicy, BreakerState, RetryPolicy
 from questz.cache import Cache
 from questz.clock import FakeClock
 from questz.driver import PlaywrightDriver
-from questz.journal import Journal
+from questz.journal import Journal, read_run, render_report
 from questz.normalize import matches
 
 pytestmark = pytest.mark.e2e
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+README = REPO_ROOT / "README.md"
+_ROLLUP = re.compile(r"<!-- report-rollup -->\n```console\n(.*?)```\n<!-- /report-rollup -->", re.S)
+# The demo pins its port so the journal is reproducible; the assertion should not care.
+_PORT = re.compile(r"127\.0\.0\.1:\d+")
 
 
 class Harness:
@@ -131,6 +139,42 @@ def test_the_screenshots_exist_and_the_credential_selectors_were_masked(
         assert shot.read_bytes().startswith(PNG_MAGIC)
     assert driver.last_mask == contract.secret_selectors
     assert contract.secret_selectors != ()
+
+
+def test_the_report_rollup_printed_in_the_readme_comes_out_of_a_real_run(tmp_path):
+    """The README quotes this transcript against a path that only exists once the demo has
+    run, so nothing re-ran it and it could drift silently. On a repo about drift.
+
+    In a subprocess because pytest-playwright already owns an asyncio loop in this one, and
+    a second sync Playwright inside a running loop raises, which Limitations documents.
+    """
+    block = _ROLLUP.search(README.read_text(encoding="utf-8"))
+    assert block is not None, "the report rollup block is missing its markers"
+    quoted = [line for line in block.group(1).splitlines() if not line.startswith("$ ")]
+
+    demo = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "questz.cli",
+            "demo",
+            "--scenario",
+            "degrade",
+            "--deterministic",
+            "--out",
+            str(tmp_path),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert demo.returncode == 0, demo.stderr or demo.stdout
+    printed = render_report(read_run(tmp_path / "degrade" / "run.jsonl")).splitlines()
+    assert [_PORT.sub("127.0.0.1", line) for line in printed[-len(quoted) :]] == [
+        _PORT.sub("127.0.0.1", line) for line in quoted
+    ]
 
 
 def test_two_aborted_requests_recover_on_the_third_as_one_breaker_success(

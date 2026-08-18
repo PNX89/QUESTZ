@@ -7,9 +7,9 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A scraper fails loudly when a page disappears. The failure that costs money is the other one: the portal redeploys,
-the price column moves one cell to the left, and the job keeps logging in, keeps finding rows, keeps writing a CSV and
-keeps exiting 0. Nothing errors, so nothing pages anybody, and the numbers are wrong for as long as it takes a human
-to notice by eye.
+the anchor your selector names is now attached to a different column, and the job keeps logging in, keeps finding
+rows, keeps writing a CSV and keeps exiting 0. Nothing errors, so nothing pages anybody, and the numbers are wrong for
+as long as it takes a human to notice by eye.
 
 QUESTZ turns that into a loud, typed, actionable stop. Before a job acts, it checks the live page against a recorded
 contract: the selectors your code depends on, the shape of the values in them, and a normalized structural signature
@@ -21,10 +21,20 @@ target ships inside the repo because what is demonstrated is a v1 to v2 redeploy
 its DOM on cue, identically, on every CI run.
 
 > **Scope.** A pre-flight gate for one process driving one browser. It flags that a page no longer matches what your
-> code assumes, and stops before the job writes. **Not in scope:** telling you the extracted data is correct, healing
-> a broken locator, diffing pixels, enforcing robots.txt, shared breaker state across hosts, a second driver, async
-> Playwright. **Core runtime dependencies: none.** Checker, breaker, cache, journal and CLI are stdlib only, so the
-> whole unit suite runs with no browser installed.
+> code assumes, and stops before the job writes.
+>
+> **It reads the markup, never the numbers.** Said here rather than 300 lines down, because it is the first thing to
+> know: if the DOM is exactly what the contract recorded and only the values under it are wrong, because a wholesale
+> cost column was piped into the price column somewhere upstream, every check in here passes and the job runs. That
+> failure needs a value layer, which is a different tool with a different shape: cardinality, null rate, distribution
+> drift, the Great Expectations and Deequ family. QUESTZ catches the change that has a trace in the page.
+>
+> **Also not in scope:** healing a broken locator, diffing pixels, enforcing robots.txt, shared breaker state across
+> hosts, a second driver, async Playwright. **Core runtime dependencies: none.** Checker, breaker, cache, journal and
+> CLI are stdlib only, so the whole unit suite runs with no browser installed.
+
+The breaker, journal and backoff shape recur across the Q...Z toolset. What separates the two closest siblings is what
+each one gates: QUIDZ refuses to send money it cannot verify, QUESTZ refuses to write data it cannot trust.
 
 ## Quickstart
 
@@ -142,18 +152,22 @@ flowchart TD
     allow -->|OPEN| refused[CircuitOpenError, nothing requested]
     allow -->|CLOSED or HALF_OPEN| fetch[Breaker.call: goto, wait on the readiness selector<br/>retries with full jitter, inside the call]
     fetch -->|attempts exhausted| stale[cache.get_stale_if_error<br/>RFC 5861, age journaled at WARN]
-    stale -->|nothing usable| refused
+    stale -->|nothing usable| raised[the fetch error is re-raised<br/>nothing written]
     stale -->|stale bytes| check
     fetch -->|html| check[canary.check_html<br/>selector rules, field shapes, structural signature]
     check -->|OK| write[extract, write the CSV] --> journal[(run.jsonl)]
     check -->|DRIFT, UNAVAILABLE or BLOCKED| stop[stop before any write] --> journal
+    raised --> journal
     refused --> journal --> report[questz report]
 ```
 
 Every box writes typed events into an append only JSONL journal; `questz report` renders a step list with durations
-and outcomes, then this rollup:
+and outcomes, then this rollup. `artifacts/` is not in the repo, so the demo that writes the journal is the first line
+here, and it needs the browser leg from [Development](#development):
 
+<!-- report-rollup -->
 ```console
+$ uv run questz demo --scenario degrade --deterministic
 $ uv run questz report artifacts/degrade/run.jsonl | tail -5
 cache: 1 stale serves, oldest 90.5s
 breaker items: CLOSED to OPEN (fetch items: TransientError: navigation failed: Page.goto: net::ERR_CONNECTION_FAILED at http://127.0.0.1:8000/items.html)
@@ -161,6 +175,10 @@ breaker items: OPEN to HALF_OPEN (cooldown elapsed)
 breaker items: HALF_OPEN to CLOSED (half open trial succeeded)
 errors: 2
 ```
+<!-- /report-rollup -->
+
+Those five lines are regenerated and diffed against a real degradation run by `tests/test_e2e.py`, for the same reason
+the detection table is: a transcript nothing re-runs is a transcript that has already drifted.
 
 ## Components
 
@@ -328,7 +346,7 @@ evidence of the opposite of what it claims.
 ask one to redeploy on cue, and scraping one from a public repo's CI is a terms of service and flakiness problem on
 every run. Precedent: Zyte runs [toscrape.com](https://toscrape.com/) as an official scraping sandbox, and
 the-internet.herokuapp.com plays that role for Selenium. The server is `http.server.ThreadingHTTPServer`, not bare
-`HTTPServer`, because the stdlib docs say the threading version exists since "web browsers pre-open sockets, on which
+`HTTPServer`, because the stdlib docs say the threading version exists to handle "web browsers pre-opening sockets, on which
 HTTPServer would wait indefinitely" ([docs](https://docs.python.org/3/library/http.server.html)); single threaded plus
 Chromium is an intermittent hang presenting as a Playwright timeout. It binds `127.0.0.1` on port 0 and reads the port
 back so CI legs cannot collide, and navigates to that literal address rather than `localhost`, which can resolve to
@@ -336,15 +354,15 @@ back so CI legs cannot collide, and navigates to that literal address rather tha
 sets a `sessionStorage` flag. It is not authentication and nothing here claims it is.
 
 **The `PageDriver` Protocol has one implementer and earns its place today.** The unit suite drives `canary.run`, the
-breaker, the journal and the whole demo job through a `FakeDriver` in `tests/conftest.py`, which is the entire reason
-199 of the tests need no browser. Driver agnosticism across real drivers is a non-goal, not a promise. It is sync:
+breaker, the journal and the whole demo job through a `FakeDriver` in `tests/conftest.py`, which is the entire reason the 7 tests in
+`tests/test_e2e.py` are the only ones in this repo that need a browser. Driver agnosticism across real drivers is a non-goal, not a promise. It is sync:
 pytest-playwright ships sync fixtures only and async needs the separate `pytest-playwright-asyncio` package
 ([test runners](https://playwright.dev/python/docs/test-runners)), the workflow is sequential so async buys no wall
 clock time, and async would push `async def` through every public signature. The cost is in
 [Limitations](#limitations).
 
-**The breaker, journal and backoff shape recur across the Q_Z toolset** as a deliberate personal standard, tuned per
-domain rather than copied: what changes is the taxonomy of what is retryable, and what one logical action is.
+**The breaker, journal and backoff shape recur across the Q...Z toolset** as a deliberate personal standard, tuned
+per domain rather than copied: what changes is the taxonomy of what is retryable, and what one logical action is.
 
 ## Prior art
 
@@ -370,9 +388,11 @@ The only thing this repo scrapes is the target bundled inside it, on loopback: n
 machine. The Robots Exclusion Protocol was standardised as [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309) in
 September 2022 and `Crawl-delay` is not part of it, while Python's stdlib `urllib.robotparser` implements the older de
 facto standard plus the `crawl-delay`, `request-rate` and `sitemap` extensions. Respect whichever the site publishes,
-rate limit regardless, and do not circumvent CAPTCHAs. On exposure, in the order it bites after hiQ: contract and
-terms of service first, personal data under GDPR second, copyright third, the CFAA last. robots.txt carries no
-independent legal force, but ignoring it is used as evidence of bad faith.
+rate limit regardless, and do not circumvent CAPTCHAs. On exposure, and this is one practitioner's ordering rather than
+legal advice: contract and terms of service first, personal data under GDPR second, copyright third, the CFAA last.
+That ordering follows hiQ Labs v. LinkedIn (9th Cir. 2022), where scraping public data was held unlikely to be CFAA
+"unauthorized access" while the contract claim was the one that landed. robots.txt carries no independent legal
+force, but ignoring it is used as evidence of bad faith.
 
 ## Limitations
 
@@ -392,6 +412,12 @@ independent legal force, but ignoring it is used as evidence of bad faith.
 - A contract is only as good as the ranges a human widened. `record` pins them to what one page had, and leaving them
   pinned produces noise on the first legitimate change.
 - QUESTZ cannot tell you the data is correct. It tells you the page still matches what your code assumes about it.
+- A run collapses to one line whatever its length, so two sibling groups whose inner list lengths differ produce the
+  same signature. They differ in `counts`, which the report prints and the JSON carries, but nothing raises a finding
+  for it: fingerprinting list lengths is what makes a canary fire on every list page it ever sees.
+- Something new and visible inside the container is a `WARNING`, not silence and not a `MAJOR`. Three of the twelve
+  fixtures in the detection table are exactly that case, and the honest answer to them is `--fail-on major` rather
+  than a normalizer clever enough to know a badge from an interstitial.
 
 ## Why I built this
 
@@ -401,6 +427,12 @@ to error on: it found rows, read cells, and wrote a file that looked exactly lik
 downstream for over a week, and the cost was not the fix, it was re-deriving which days of data had been poisoned.
 Everything here comes from wanting that job to have stopped on day one, naming the column.
 
+Being precise about what would have stopped it, because it matters: a contract declaring the anchor of each cell and
+the shape of the value in it. The moved column reached the price cell carrying a value the price rule does not accept,
+which is a CRITICAL `field_shape` finding, and the anchors it moved between are in the structural baseline. What would
+still have gone through is the version where the markup is untouched and only the numbers are wrong. That one needs
+the value layer named at the top of this file.
+
 ## Development
 
 ```bash
@@ -409,7 +441,8 @@ uv run pytest -q                          # e2e is skipped with a reason when no
 uv run ruff check . && uv run ruff format --check .
 ```
 
-The browser leg is a separate, larger step, roughly a 30 second download with `--only-shell`:
+The browser leg is a separate, larger step: a browser download rather than a package install, which `--only-shell`
+keeps to the headless shell:
 
 ```bash
 uv sync --extra playwright --group e2e
@@ -426,4 +459,7 @@ the binaries ([CI docs](https://playwright.dev/python/docs/ci)). See also `quest
 
 ## License
 
-MIT. Copyright (c) 2026 Quelin Zammit. Part of the Q...Z toolset: QUACKZ, QUOTEZ, QUELLZ, QUIDZ, QUESTZ.
+MIT. Copyright (c) 2026 Quelin Zammit. Part of the Q...Z toolset: [QUACKZ](https://github.com/PNX89/QUACKZ)
+(backtest overfitting), [QUOTEZ](https://github.com/PNX89/QUOTEZ) (a read only market data MCP server),
+[QUELLZ](https://github.com/PNX89/QUELLZ) (prompt injection containment),
+[QUIDZ](https://github.com/PNX89/QUIDZ) (payment webhook and payout safety), and this one.
