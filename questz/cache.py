@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from questz.clock import SYSTEM_CLOCK, Clock
 from questz.types import CacheError, JournalSink
@@ -134,7 +135,7 @@ class Cache:
         age = (self._clock.now() - stored_at).total_seconds()
         return value, stored_at, age
 
-    def _event(self, name: str, level: str, **payload: object) -> None:
+    def _event(self, name: str, level: str, **payload: Any) -> None:
         if self._journal is not None:
             self._journal.event(name, level=level, **payload)
 

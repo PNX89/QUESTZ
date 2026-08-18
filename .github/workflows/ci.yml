@@ -27,6 +27,9 @@ jobs:
       - run: uv sync --locked --dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # The wheel ships py.typed, so the Typed classifier is checked rather than asserted.
+      # No playwright extra here: the core has to type check without the browser package.
+      - run: uv run mypy
 
   unit:
     runs-on: ubuntu-latest

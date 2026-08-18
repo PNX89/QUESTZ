@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from questz.driver import PageDriver
 from questz.normalize import Element, diff, normalize_tree, parse, select, walk
@@ -207,7 +207,7 @@ def _severity(raw: Any, path: Path) -> Severity:
         raise ContractError(
             f"{path}: unknown severity {raw!r}, expected one of {list(SEVERITY_ORDER)}"
         )
-    return raw
+    return cast(Severity, raw)
 
 
 def _selector_rule(raw: Any, path: Path) -> SelectorRule:

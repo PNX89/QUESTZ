@@ -62,7 +62,7 @@ class PlaywrightDriver:
 
     def html(self, selector: str | None = None) -> str:
         if selector is None:
-            return self._page.content()
+            return str(self._page.content())
         locator = self._page.locator(selector)
         if locator.count() == 0:
             return ""

@@ -113,7 +113,7 @@ class DriftReport:
     def max_severity(self) -> Severity | None:
         if not self.findings:
             return None
-        return max((f.severity for f in self.findings), key=lambda s: SEVERITY_ORDER[s])
+        return max((f.severity for f in self.findings), key=SEVERITY_ORDER.__getitem__)
 
     def to_dict(self) -> dict[str, Any]:
         return {

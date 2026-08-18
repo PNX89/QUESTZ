@@ -439,6 +439,7 @@ the value layer named at the top of this file.
 uv sync                                   # dev tools only; the package itself has no dependencies
 uv run pytest -q                          # e2e is skipped with a reason when no browser is present
 uv run ruff check . && uv run ruff format --check .
+uv run mypy                               # strict, and it runs without the playwright extra
 ```
 
 The browser leg is a separate, larger step: a browser download rather than a package install, which `--only-shell`
@@ -451,8 +452,9 @@ uv run pytest -m e2e
 uv run questz demo --scenario degrade --deterministic
 ```
 
-CI is three jobs in one workflow: `lint`; `unit` on Python 3.11, 3.12, 3.13 and 3.14 with no browser and so no C
-extensions in the matrix; and `e2e` on 3.13 with chromium, traces retained on failure and a 10 minute timeout. There
+CI is three jobs in one workflow: `lint`, which is ruff plus `mypy --strict`; `unit` on Python 3.11, 3.12, 3.13 and
+3.14 with no browser and so no C extensions in the matrix; and `e2e` on 3.13 with chromium, traces retained on failure
+and a 10 minute timeout. There
 is no browser binary cache step, because Playwright's own CI docs say restoring one takes about as long as downloading
 the binaries ([CI docs](https://playwright.dev/python/docs/ci)). See also `questz serve --help` and
 `questz canary record --help`.

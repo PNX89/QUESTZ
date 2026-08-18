@@ -39,7 +39,7 @@ Source = "https://github.com/PNX89/QUESTZ"
 # pytest-playwright is deliberately NOT in the dev group: it depends on playwright, which
 # depends on greenlet, and the unit CI matrix is meant to install zero C extensions.
 [dependency-groups]
-dev = ["pytest>=9.0.3", "ruff"]
+dev = ["mypy>=1.18.2", "pytest>=9.0.3", "ruff"]
 e2e = ["pytest-playwright"]
 
 [tool.hatch.build.targets.wheel]
@@ -59,6 +59,19 @@ select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
+
+# The package advertises `Typing :: Typed` and ships py.typed. This leg is what makes that
+# a checked claim rather than a classifier.
+[tool.mypy]
+files = ["questz"]
+python_version = "3.11"
+strict = true
+
+[[tool.mypy.overrides]]
+# playwright is an optional extra, so the type check has to pass without it installed, the
+# same property the unit suite has.
+module = ["playwright.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
