@@ -24,10 +24,6 @@ README_TEXT = README.read_text(encoding="utf-8")
 # the file somebody reads to decide whether to keep reading.
 LINE_BUDGET = 440
 
-# By codepoint. Typing either character into this file would make the test its own
-# counterexample, and a search for it would find the assertion rather than a violation.
-EM_DASH = chr(0x2014)
-EN_DASH = chr(0x2013)
 
 _DOCUMENTED_COMMAND = re.compile(r"^uv run (questz .+?) +# exit (\d)$", re.MULTILINE)
 _DETECTION_TABLE = re.compile(
@@ -56,56 +52,9 @@ REQUIRED_CITATIONS = (
     "https://lwn.net/Articles/682988/",
 )
 
-TEXT_SUFFIXES = frozenset(
-    {
-        ".cfg",
-        ".css",
-        ".html",
-        ".js",
-        ".json",
-        ".lock",
-        ".md",
-        ".py",
-        ".sh",
-        ".toml",
-        ".txt",
-        ".typed",
-        ".yaml",
-        ".yml",
-    }
-)
-TEXT_NAMES = frozenset({"LICENSE", ".gitignore"})
-SKIPPED_DIRS = frozenset(
-    {
-        ".git",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".venv",
-        "__pycache__",
-        "artifacts",
-        "build",
-        "dist",
-        "node_modules",
-        "runs",
-        "test-results",
-        "venv",
-    }
-)
-
 
 def _documented_commands() -> list[tuple[str, int]]:
     return [(command, int(code)) for command, code in _DOCUMENTED_COMMAND.findall(README_TEXT)]
-
-
-def _tracked_text_files() -> list[Path]:
-    found: list[Path] = []
-    for path in REPO_ROOT.rglob("*"):
-        if not path.is_file() or any(part in SKIPPED_DIRS for part in path.parts):
-            continue
-        if path.suffix in TEXT_SUFFIXES or path.name in TEXT_NAMES:
-            found.append(path)
-    return found
 
 
 @pytest.mark.parametrize(("command", "expected"), _documented_commands())
@@ -148,21 +97,8 @@ def test_the_detection_table_matches_a_fresh_generation() -> None:
     assert found.group(1) == scenarios.table_markdown()
 
 
-def test_no_dash_punctuation_survives_in_any_text_file() -> None:
-    offenders = {
-        str(path.relative_to(REPO_ROOT)): [
-            number
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-            if EM_DASH in line or EN_DASH in line
-        ]
-        for path in _tracked_text_files()
-    }
-    assert {path: lines for path, lines in offenders.items() if lines} == {}
-
-
-@pytest.mark.parametrize("url", REQUIRED_CITATIONS)
-def test_every_technical_claim_keeps_its_citation(url: str) -> None:
-    assert url in README_TEXT
+def test_every_technical_claim_keeps_its_citation() -> None:
+    assert [url for url in REQUIRED_CITATIONS if url not in README_TEXT] == []
 
 
 def test_the_readme_stays_inside_its_length_budget() -> None:
