@@ -39,7 +39,41 @@ _VOID_ELEMENTS = frozenset(
         "link", "meta", "param", "source", "track", "wbr",
     }
 )  # fmt: skip
-_SKIPPED_SUBTREES = frozenset({"script", "style", "svg", "noscript"})
+# `template` content is an inert DocumentFragment, not part of the rendered tree, so a
+# hydration payload is markup the user never sees. `page.content()` serializes it anyway.
+_SKIPPED_SUBTREES = frozenset({"script", "style", "svg", "noscript", "template"})
+
+# Start tags that imply the end of an open element, with the ancestors the search stops at.
+# `html.parser` implements none of this, and portal markup leaves <td>, <tr> and <li>
+# unclosed constantly: without it the whole table's text collapses into the first cell and
+# the canary reports a price formatting problem that does not exist.
+_IMPLIED_END: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "li": (frozenset({"li"}), frozenset({"ul", "ol", "menu", "table", "td", "th"})),
+    "dt": (frozenset({"dt", "dd"}), frozenset({"dl", "table", "td", "th"})),
+    "dd": (frozenset({"dt", "dd"}), frozenset({"dl", "table", "td", "th"})),
+    "td": (frozenset({"td", "th"}), frozenset({"tr", "table"})),
+    "th": (frozenset({"td", "th"}), frozenset({"tr", "table"})),
+    "tr": (frozenset({"tr"}), frozenset({"table", "thead", "tbody", "tfoot"})),
+    "option": (frozenset({"option"}), frozenset({"select", "datalist", "optgroup"})),
+}
+# The HTML5 list of start tags that close an open <p>, and the containers that would have
+# closed it already.
+_P = frozenset({"p"})
+_CLOSES_P = frozenset(
+    {
+        "address", "article", "aside", "blockquote", "details", "div", "dl", "fieldset",
+        "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",
+        "header", "hr", "main", "menu", "nav", "ol", "p", "pre", "section", "table", "ul",
+    }
+)  # fmt: skip
+_BLOCK_SCOPE = frozenset(
+    {
+        "article", "aside", "blockquote", "body", "dd", "details", "div", "dl", "dt",
+        "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5",
+        "h6", "header", "li", "main", "nav", "ol", "section", "table", "tbody", "td",
+        "tfoot", "th", "thead", "tr", "ul",
+    }
+)  # fmt: skip
 
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 _UNSUPPORTED_SYNTAX = {
@@ -94,6 +128,26 @@ class _TreeBuilder(HTMLParser):
         self._skip_depth = 0
         self._order = 0
 
+    def _close_implied(self, tag: str) -> None:
+        """Close what this start tag implies is over, stopping at a container boundary.
+
+        Deleting the whole tail of the stack is what makes `<li><p>a<li>` close the
+        paragraph as well as the item, which is what a browser does.
+        """
+        if tag in _IMPLIED_END:
+            closes, boundary = _IMPLIED_END[tag]
+        elif tag in _CLOSES_P:
+            closes, boundary = _P, _BLOCK_SCOPE
+        else:
+            return
+        for index in range(len(self._stack) - 1, 0, -1):
+            current = self._stack[index].tag
+            if current in closes:
+                del self._stack[index:]
+                return
+            if current in boundary:
+                return
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if self._skipped is not None:
             if tag == self._skipped:
@@ -103,6 +157,7 @@ class _TreeBuilder(HTMLParser):
             self._skipped = tag
             self._skip_depth = 1
             return
+        self._close_implied(tag)
         parent = self._stack[-1]
         element = Element(
             tag=tag,

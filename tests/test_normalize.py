@@ -131,6 +131,70 @@ def test_void_elements_do_not_swallow_their_siblings():
     assert structure.lines == ("0|div|data-testid=c", "1|br|", "1|img|", "1|p|role=note")
 
 
+def test_unclosed_cells_stay_siblings_instead_of_nesting():
+    """`html.parser` implements no implied end tags, so without this a page that omits
+    </td>, which real portals do constantly, nests every cell inside the first one and the
+    whole row's text collapses into it as one unparseable price."""
+    structure = normalize(
+        '<table data-testid="t"><tr><td data-testid="a">1<td data-testid="b">2</table>',
+        container='[data-testid="t"]',
+    )
+    assert structure.lines == (
+        "0|table|data-testid=t",
+        "1|tr|",
+        "2|td|data-testid=a",
+        "2|td|data-testid=b",
+    )
+    cells = matches('<table><tr><td class="price">19.99<td class="stock">low</table>', "td")
+    assert [cell.text for cell in cells] == ["19.99", "low"]
+
+
+def test_an_unclosed_row_is_closed_by_the_next_one():
+    structure = normalize(
+        '<table data-testid="t"><tr><td role="a">1<tr><td role="b">2</table>',
+        container='[data-testid="t"]',
+    )
+    assert structure.lines == (
+        "0|table|data-testid=t",
+        "1|tr|",
+        "2|td|role=a",
+        "1|tr|",
+        "2|td|role=b",
+    )
+
+
+def test_an_unclosed_list_item_closes_at_the_next_one_but_not_through_a_nested_list():
+    flat = normalize('<ul data-testid="c"><li>a<li>b</ul>', container='[data-testid="c"]')
+    # Two identical siblings, so they collapse to one run marked x* with the count kept.
+    assert flat.lines == ("0|ul|data-testid=c", "1|li||x*")
+    assert [count for _, count in flat.counts] == [2]
+    nested = normalize(
+        '<ul data-testid="c"><li>a<ul><li role="inner">b</li></ul></li></ul>',
+        container='[data-testid="c"]',
+    )
+    assert nested.lines == ("0|ul|data-testid=c", "1|li|", "2|ul|", "3|li|role=inner")
+
+
+def test_an_unclosed_paragraph_is_closed_by_the_block_that_follows_it():
+    structure = normalize(
+        '<div data-testid="c"><p>one<p>two<div role="after"></div></div>',
+        container='[data-testid="c"]',
+    )
+    assert structure.lines == ("0|div|data-testid=c", "1|p||x*", "1|div|role=after")
+
+
+def test_a_hydration_template_is_not_part_of_the_tree():
+    """A template's content is an inert DocumentFragment nobody sees, but `page.content()`
+    serializes it, so unskipped it reads as a pile of nodes that appeared from nowhere."""
+    plain = normalize('<div data-testid="c"><p></p></div>', container='[data-testid="c"]')
+    hydrated = normalize(
+        '<div data-testid="c"><template id="tpl"><section role="row"><b></b></section>'
+        "</template><p></p></div>",
+        container='[data-testid="c"]',
+    )
+    assert hydrated.signature == plain.signature
+
+
 @pytest.mark.parametrize(
     ("selector", "expected"),
     [

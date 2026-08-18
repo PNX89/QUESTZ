@@ -69,6 +69,16 @@ def test_the_redeploy_reports_the_three_declared_violations(testsite_html, contr
     assert _finding(report, "structure_removed").severity == "MAJOR"
 
 
+def test_a_page_that_never_closes_its_cells_is_still_ok(testsite_html, contract):
+    """The parser owns this, but the symptom lands here: nested cells collapse every value
+    in the row into the first one, and the operator gets sent after a price format problem
+    that does not exist."""
+    sloppy = testsite_html("v1/items.html").replace("</td>", "").replace("</tr>", "")
+    report = check_html(sloppy, contract, target="sloppy")
+    assert report.status == "OK"
+    assert report.signature_observed == contract.signature
+
+
 def test_the_findings_are_ordered_by_severity(testsite_html, contract):
     report = check_html(testsite_html("v2/items.html"), contract, target="v2")
     severities = [finding.severity for finding in report.findings]
