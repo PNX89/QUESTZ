@@ -28,6 +28,7 @@ FindingKind = Literal[
     "count_out_of_range",
     "field_shape",
     "structure_added",
+    "structure_moved",
     "structure_removed",
 ]
 

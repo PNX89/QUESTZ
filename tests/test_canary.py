@@ -79,6 +79,36 @@ def test_a_page_that_never_closes_its_cells_is_still_ok(testsite_html, contract)
     assert report.signature_observed == contract.signature
 
 
+def test_a_wrapper_div_is_reported_as_one_move_not_eleven_deletions(testsite_html, contract):
+    """Depth is part of every serialized line, so one layout wrapper invalidates the whole
+    subtree. Reporting nodes as gone when they are still on the page sends whoever got
+    paged looking for something that never happened."""
+    html = testsite_html("v1/items.html")
+    wrapped = html.replace(
+        '<table data-testid="items-table" class="grid">',
+        '<div class="table-wrap"><table data-testid="items-table" class="grid">',
+        1,
+    ).replace("</table>", "</table></div>", 1)
+    report = check_html(wrapped, contract, target="wrapped")
+    moved = _finding(report, "structure_moved")
+    assert [finding.kind for finding in report.findings] == ["structure_moved", "structure_added"]
+    assert moved.severity == "WARNING"
+    assert moved.found == "11 re-nested 1 level deeper"
+    assert _finding(report, "structure_added").found == "1 new"
+    assert report.max_severity == "WARNING"
+
+
+def test_a_node_that_really_left_is_still_reported_as_gone(testsite_html, contract):
+    """The move detector must not launder a deletion: only nodes with a matching line at a
+    different depth are re-nested, everything else is still missing."""
+    html = testsite_html("v1/items.html").replace(
+        '<th data-testid="col-stock" class="th">Availability</th>', "", 1
+    )
+    report = check_html(html, contract, target="removed")
+    assert _finding(report, "structure_removed").found == "1 gone"
+    assert "col-stock" in _finding(report, "structure_removed").detail
+
+
 def test_the_findings_are_ordered_by_severity(testsite_html, contract):
     report = check_html(testsite_html("v2/items.html"), contract, target="v2")
     severities = [finding.severity for finding in report.findings]

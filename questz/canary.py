@@ -6,6 +6,7 @@ from __future__ import annotations
 import difflib
 import json
 import re
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
@@ -433,6 +434,58 @@ def _field_findings(root: Element, contract: Contract) -> list[Finding]:
     return findings
 
 
+def _depth_and_key(line: str) -> tuple[int, str]:
+    depth, _, key = line.partition("|")
+    return int(depth), key
+
+
+def _reparented(
+    removed: list[str], added: list[str]
+) -> tuple[int, list[str], list[str], list[str]]:
+    """Separate the nodes that only moved by one constant depth from the rest.
+
+    A wrapper `<div>` around a table re-nests its whole subtree one level deeper. Depth is
+    part of every serialized line, so the raw diff calls that eleven deletions and eleven
+    insertions and names nodes that are still on the page, which is worse than useless to
+    whoever got paged. One shift, reported once, is both true and actionable.
+    """
+    pool = Counter(added)
+    depths_by_key: dict[str, list[int]] = {}
+    for line in added:
+        depth, key = _depth_and_key(line)
+        depths_by_key.setdefault(key, []).append(depth)
+    shifts = Counter(
+        depth_now - depth_was
+        for line in removed
+        for depth_was, key in (_depth_and_key(line),)
+        for depth_now in depths_by_key.get(key, ())
+        if depth_now != depth_was
+    )
+    if not shifts:
+        return 0, [], removed, added
+    # The dominant shift, and the smallest one when two are equally popular: a single
+    # wrapper is one shift, and unrelated nodes that coincide are not.
+    shift = max(shifts, key=lambda offset: (shifts[offset], -abs(offset), -offset))
+    moved: list[str] = []
+    still_gone: list[str] = []
+    used: Counter[str] = Counter()
+    for line in removed:
+        depth, key = _depth_and_key(line)
+        shifted = f"{depth + shift}|{key}"
+        if pool[shifted] > used[shifted]:
+            used[shifted] += 1
+            moved.append(line)
+        else:
+            still_gone.append(line)
+    kept: list[str] = []
+    for line in added:
+        if used[line]:
+            used[line] -= 1
+        else:
+            kept.append(line)
+    return shift, moved, still_gone, kept
+
+
 def _structure_findings(baseline: Sequence[str], observed: Sequence[str]) -> list[Finding]:
     matcher = difflib.SequenceMatcher(a=list(baseline), b=list(observed), autojunk=False)
     removed: list[str] = []
@@ -442,6 +495,7 @@ def _structure_findings(baseline: Sequence[str], observed: Sequence[str]) -> lis
             removed.extend(baseline[start_a:end_a])
         if tag in ("replace", "insert"):
             added.extend(observed[start_b:end_b])
+    shift, moved, removed, added = _reparented(removed, added)
     findings: list[Finding] = []
     if removed:
         findings.append(
@@ -452,6 +506,18 @@ def _structure_findings(baseline: Sequence[str], observed: Sequence[str]) -> lis
                 "every baseline node still present",
                 f"{len(removed)} gone",
                 detail=_node_detail(removed),
+            )
+        )
+    if moved:
+        direction = "deeper" if shift > 0 else "shallower"
+        findings.append(
+            Finding(
+                "structure_moved",
+                "WARNING",
+                None,
+                "every baseline node at the same depth",
+                f"{len(moved)} re-nested {abs(shift)} level {direction}",
+                detail=_node_detail(moved),
             )
         )
     if added:
