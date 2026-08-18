@@ -121,10 +121,26 @@ class RunRecord:
     entries: tuple[JournalEntry, ...]
 
 
-def _last_seq(path: Path) -> int:
+def _read_journal_text(path: Path, *, missing_ok: bool) -> str | None:
     try:
-        text = path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
     except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise QuestzError(f"journal file not found: {path}") from None
+    except UnicodeDecodeError as exc:
+        # A ValueError, so it slips past every `except OSError`. The evidence file is the
+        # artifact this tool asks people to keep, so refusing to guess is the point.
+        raise QuestzError(f"{path} is not valid UTF-8: {exc.reason} at byte {exc.start}") from None
+    except OSError as exc:
+        raise QuestzError(f"cannot read journal {path}: {exc.strerror or exc}") from None
+
+
+def _last_seq(path: Path) -> int:
+    # An unreadable tail is fatal rather than assumed empty: continuing would hand the next
+    # entry a sequence number that is already in the file.
+    text = _read_journal_text(path, missing_ok=True)
+    if text is None:
         return 0
     last = 0
     for line in text.splitlines():
@@ -213,8 +229,9 @@ class Journal:
 
 
 def read_run(path: Path) -> RunRecord:
+    text = _read_journal_text(path, missing_ok=False) or ""
     entries: list[JournalEntry] = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
         try:

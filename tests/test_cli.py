@@ -88,6 +88,50 @@ def test_an_unreadable_html_file_exits_two(capsys, contract_path, tmp_path):
     assert "gone.html" in stderr
 
 
+def _unreadable(tmp_path: Path, kind: str, name: str) -> Path:
+    path = tmp_path / name
+    if kind == "a directory":
+        path.mkdir()
+    else:
+        # UTF-16 with a BOM: what a Windows editor writes, and undecodable as UTF-8.
+        path.write_bytes("{}".encode("utf-16"))
+    return path
+
+
+@pytest.mark.parametrize("kind", ["a directory", "not utf-8"])
+def test_a_contract_that_cannot_be_read_exits_two_rather_than_reporting_drift(
+    capsys, tmp_path, testsite_file, kind
+):
+    """Exit 1 means DRIFT to whatever runs this, so a contract path naming a directory or a
+    file in the wrong encoding has to land on 2 instead, and it has to do it without a
+    traceback: UnicodeDecodeError is a ValueError and slips past every `except OSError`."""
+    code, stdout, stderr = _check(
+        capsys, _unreadable(tmp_path, kind, "contract"), testsite_file("v1/items.html")
+    )
+    assert code == cli.EXIT_USAGE
+    assert stdout == ""
+    assert len(stderr.splitlines()) == 1
+    assert "Traceback" not in stderr
+
+
+@pytest.mark.parametrize("kind", ["a directory", "not utf-8"])
+def test_an_html_target_that_cannot_be_read_exits_two(capsys, contract_path, tmp_path, kind):
+    code, stdout, stderr = _check(capsys, contract_path, _unreadable(tmp_path, kind, "page.html"))
+    assert code == cli.EXIT_USAGE
+    assert stdout == ""
+    assert "page.html" in stderr
+    assert "Traceback" not in stderr
+
+
+@pytest.mark.parametrize("kind", ["a directory", "not utf-8"])
+def test_a_journal_that_cannot_be_read_exits_two(capsys, tmp_path, kind):
+    code, stdout, stderr = _run(capsys, "report", str(_unreadable(tmp_path, kind, "run.jsonl")))
+    assert code == cli.EXIT_USAGE
+    assert stdout == ""
+    assert "run.jsonl" in stderr
+    assert "Traceback" not in stderr
+
+
 def test_record_writes_a_contract_the_checker_then_accepts(capsys, tmp_path, testsite_file):
     out = tmp_path / "recorded.json"
     row = 'tr[data-testid="item-row"]'

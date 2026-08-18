@@ -74,6 +74,10 @@ def _stamp(clock: Clock) -> str:
 def _read_text(path: Path, label: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        # A ValueError, not an OSError. Every "unreadable file" handler that lists only
+        # OSError lets this one out as a traceback carrying the wrong exit code.
+        raise _Usage(f"{label} {path}: not valid UTF-8, {exc.reason} at byte {exc.start}") from None
     except OSError as exc:
         raise _Usage(f"{label} {path}: {exc.strerror or exc}") from None
 
@@ -194,8 +198,8 @@ def _cmd_record(args: argparse.Namespace) -> int:
 
 
 def _cmd_report(args: argparse.Namespace) -> int:
-    if not args.run.exists():
-        raise _Usage(f"journal file not found: {args.run}")
+    # No `exists()` pre-check: it answers a different question from "can this be read", and
+    # a directory passes it. read_run raises one readable QuestzError for every case.
     record_ = read_run(args.run)
     print(render_report(record_))
     if args.json_out is not None:

@@ -259,6 +259,28 @@ def test_a_corrupt_store_starts_closed_with_a_journaled_warning(tmp_path, fake_c
     assert "corrupt breaker store" in str(payload["reason"])
 
 
+def test_a_store_that_is_not_utf_8_starts_closed_instead_of_crashing_the_job(
+    tmp_path, fake_clock, journal_sink
+):
+    """UnicodeDecodeError is a ValueError, so it is not caught by an OSError handler. A
+    breaker that dies on its own state file takes down the job it exists to protect."""
+    path = tmp_path / "breaker.json"
+    path.write_bytes(b'{"items": {"state": "\xff\xfe OPEN"}}')
+    breaker = _breaker(clock=fake_clock, store=BreakerStore(path), journal=journal_sink)
+    assert breaker.state is BreakerState.CLOSED
+    assert "corrupt breaker store" in str(journal_sink.events[0][2]["reason"])
+
+
+def test_a_store_path_that_is_a_directory_starts_closed_with_a_warning(
+    tmp_path, fake_clock, journal_sink
+):
+    path = tmp_path / "breaker.json"
+    path.mkdir()
+    breaker = _breaker(clock=fake_clock, store=BreakerStore(path), journal=journal_sink)
+    assert breaker.state is BreakerState.CLOSED
+    assert "unreadable breaker store" in str(journal_sink.events[0][2]["reason"])
+
+
 def test_the_store_leaves_no_temporary_file_behind(tmp_path, fake_clock):
     store = BreakerStore(tmp_path / "breaker.json")
     breaker = _breaker(clock=fake_clock, store=store)

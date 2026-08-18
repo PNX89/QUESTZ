@@ -105,6 +105,19 @@ def test_a_corrupt_entry_raises_naming_the_path(tmp_cache):
     assert str(path) in str(caught.value)
 
 
+def test_an_entry_that_is_not_utf_8_is_corrupt_rather_than_a_traceback(tmp_cache):
+    tmp_cache.put("items", b"payload")
+    tmp_cache.path_for("items").write_bytes(b'{"value_base64": "\xff\xfe"}')
+    with pytest.raises(CacheError, match="corrupt cache entry"):
+        tmp_cache.get("items")
+
+
+def test_an_entry_path_that_is_a_directory_is_reported_as_unreadable(tmp_cache):
+    tmp_cache.path_for("items").mkdir(parents=True)
+    with pytest.raises(CacheError, match="unreadable cache entry"):
+        tmp_cache.get("items")
+
+
 @pytest.mark.parametrize("key", ["../../etc/passwd", "https://example.test/a/b?c=1", "a/b/c"])
 def test_keys_hash_to_a_safe_filename_inside_the_root(tmp_cache, key):
     path = tmp_cache.path_for(key)

@@ -125,7 +125,11 @@ class Cache:
             stored_at = datetime.fromisoformat(raw["stored_at"])
         except FileNotFoundError:
             return None
+        except OSError as exc:
+            raise CacheError(f"unreadable cache entry: {path} ({exc.strerror or exc})") from exc
         except (KeyError, ValueError, TypeError) as exc:
+            # ValueError covers UnicodeDecodeError, which is what a truncated or non-UTF-8
+            # entry raises. It is deliberately in the same bucket as malformed JSON.
             raise CacheError(f"corrupt cache entry: {path} ({type(exc).__name__})") from exc
         age = (self._clock.now() - stored_at).total_seconds()
         return value, stored_at, age

@@ -125,3 +125,18 @@ def test_unparseable_json_raises_a_readable_error(tmp_path):
     path.write_text("{ not json", encoding="utf-8")
     with pytest.raises(ContractError, match="not valid JSON"):
         load(path)
+
+
+def test_a_contract_in_the_wrong_encoding_raises_a_readable_error(tmp_path):
+    """UnicodeDecodeError is a ValueError, so it is neither an OSError nor a
+    JSONDecodeError. Uncaught, it reaches the operator as a traceback."""
+    path = tmp_path / "items.json"
+    path.write_bytes(json.dumps({"format": 1}).encode("utf-16"))
+    with pytest.raises(ContractError, match="not valid UTF-8"):
+        load(path)
+
+
+def test_a_contract_path_that_is_a_directory_raises_a_readable_error(tmp_path):
+    (tmp_path / "items.json").mkdir()
+    with pytest.raises(ContractError, match="contract file"):
+        load(tmp_path / "items.json")

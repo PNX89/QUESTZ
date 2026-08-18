@@ -131,6 +131,14 @@ def load(path: Path) -> Contract:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ContractError(f"contract file not found: {path}") from None
+    except UnicodeDecodeError as exc:
+        # UnicodeDecodeError is a ValueError, so an `except OSError` above it catches
+        # nothing. Letting it escape here would exit 1, and 1 means DRIFT.
+        raise ContractError(
+            f"{path} is not valid UTF-8: {exc.reason} at byte {exc.start}"
+        ) from None
+    except OSError as exc:
+        raise ContractError(f"contract file {path}: {exc.strerror or exc}") from None
     except json.JSONDecodeError as exc:
         raise ContractError(f"{path} is not valid JSON: {exc}") from None
     if not isinstance(raw, dict):

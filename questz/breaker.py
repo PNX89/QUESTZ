@@ -109,7 +109,13 @@ class BreakerStore:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return {}
-        except json.JSONDecodeError as exc:
+        except OSError as exc:
+            raise CacheError(
+                f"unreadable breaker store: {self.path} ({exc.strerror or exc})"
+            ) from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            # UnicodeDecodeError is a ValueError. A state file with one non-UTF-8 byte in
+            # it must degrade to a fresh breaker, never crash the job the breaker protects.
             raise CacheError(f"corrupt breaker store: {self.path} ({exc})") from exc
         if not isinstance(raw, dict):
             raise CacheError(f"corrupt breaker store: {self.path} (not a JSON object)")

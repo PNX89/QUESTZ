@@ -227,6 +227,30 @@ def test_event_producers_never_import_the_journal():
         assert "questz.journal" not in imported, name
 
 
+def test_a_journal_that_is_not_utf_8_is_refused_by_name(tmp_path):
+    """A ValueError, not an OSError, so it escapes the usual unreadable-file handler as a
+    traceback carrying whatever exit code the caller happened to be on."""
+    path = tmp_path / "run.jsonl"
+    path.write_bytes(b'{"seq": 1, "note": "\xff\xfe"}\n')
+    with pytest.raises(QuestzError, match="not valid UTF-8"):
+        read_run(path)
+
+
+def test_a_journal_path_that_is_a_directory_is_refused_by_name(tmp_path):
+    (tmp_path / "run.jsonl").mkdir()
+    with pytest.raises(QuestzError, match="cannot read journal"):
+        read_run(tmp_path / "run.jsonl")
+
+
+def test_appending_to_an_undecodable_journal_refuses_rather_than_reusing_a_seq(
+    tmp_path, fake_clock
+):
+    path = tmp_path / "run.jsonl"
+    path.write_bytes(b'{"seq": 7}\n\xff\xfe\n')
+    with pytest.raises(QuestzError, match="not valid UTF-8"):
+        Journal(path, run_id="questz-demo", clock=fake_clock)
+
+
 def test_an_empty_run_renders_without_steps(tmp_path, fake_clock):
     journal = _journal(tmp_path, fake_clock)
     journal.close()
