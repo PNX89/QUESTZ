@@ -288,8 +288,11 @@ one atomic write: a temporary file in the target's own directory (`os.replace` a
 `os.replace`, an `fsync` of the parent directory, and an unlink of the temporary file in a `finally`.
 
 **Redaction is default deny.** Only payload keys listed in `EVENT_FIELDS[event]` are written at all, which is a
-different property from masking a value after the fact; on top of that, URL query strings and fragments are replaced
-and any key matching `pass|secret|token|auth|cookie|session|api[_-]?key` becomes `<redacted>`. The real leak vector is
+different property from masking a value after the fact; on top of that, any key matching
+`pass|secret|token|auth|cookie|session|api[_-]?key` becomes `<redacted>`, and every URL found in a value, including one
+sitting inside a longer error message, has its userinfo blanked, its query replaced and its fragment dropped. The
+userinfo is the part that actually leaks: `http://user:hunter2@proxy.example.com:8080/items.html` is how a scraping
+proxy is ordinarily configured, and it carries no query string for a query-only redactor to find. The real leak vector is
 not the JSON though, it is the screenshots, so the driver hands `contract.secret_selectors` to Playwright's
 `page.screenshot(mask=[...], mask_color="#000000")` ([docs](https://playwright.dev/python/docs/api/class-page)).
 `docs/evidence-login-masked.png` is the committed screenshot of the login page with both credential fields filled,

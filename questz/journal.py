@@ -60,18 +60,35 @@ EVENT_FIELDS: dict[str, frozenset[str]] = {
 
 _SECRET_KEY = re.compile(r"(?i)pass|secret|token|auth|cookie|session|api[_-]?key")
 _REDACTED = "<redacted>"
+# A URL anywhere inside a string, not only a value that is entirely one. Driver failures
+# arrive as "navigation failed: Page.goto: net::ERR_TUNNEL_FAILED at http://u:p@proxy/x",
+# so a redactor that only handles a bare URL misses the case that actually leaks.
+_URL_IN_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'<>]+")
 
 
 def _redact_url(text: str) -> str:
-    parts = urlsplit(text)
-    if not parts.scheme or not parts.netloc or (not parts.query and not parts.fragment):
+    """Blank the userinfo, mark the query, drop the fragment.
+
+    The userinfo is the part that leaks: `http://user:hunter2@proxy.example.com:8080/x` is
+    the ordinary way a scraping proxy is configured, and a journal is meant to be pasted
+    into a ticket. The fragment is dropped rather than marked, because writing `?<redacted>`
+    onto a URL that never had a query describes a query string that did not exist.
+    """
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        # An unparseable URL is redacted whole. A redactor that fails open is not one.
+        return _REDACTED
+    if not parts.scheme or not parts.netloc:
         return text
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, _REDACTED, ""))
+    _, credentials, host = parts.netloc.rpartition("@")
+    netloc = f"{_REDACTED}@{host}" if credentials else host
+    return urlunsplit((parts.scheme, netloc, parts.path, _REDACTED if parts.query else "", ""))
 
 
 def _redact_value(value: Any) -> Any:
     if isinstance(value, str):
-        return _redact_url(value)
+        return _URL_IN_TEXT.sub(lambda found: _redact_url(found.group(0)), value)
     if isinstance(value, dict):
         return {key: _redact(str(key), item) for key, item in value.items()}
     if isinstance(value, list | tuple):

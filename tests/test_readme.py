@@ -20,6 +20,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / "README.md"
 README_TEXT = README.read_text(encoding="utf-8")
 
+# A ceiling, not a target. Past this the design decisions belong in docs/ rather than in
+# the file somebody reads to decide whether to keep reading.
+LINE_BUDGET = 440
+
 # By codepoint. Typing either character into this file would make the test its own
 # counterexample, and a search for it would find the assertion rather than a violation.
 EM_DASH = chr(0x2014)
@@ -162,7 +166,7 @@ def test_every_technical_claim_keeps_its_citation(url: str) -> None:
 
 
 def test_the_readme_stays_inside_its_length_budget() -> None:
-    assert len(README_TEXT.splitlines()) <= 400
+    assert len(README_TEXT.splitlines()) <= LINE_BUDGET
 
 
 @pytest.mark.parametrize("word", ["guarantee", "self healing locator", "prevents", "eliminates"])

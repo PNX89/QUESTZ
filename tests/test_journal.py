@@ -82,6 +82,57 @@ def test_a_url_query_string_is_stripped(tmp_path, fake_clock):
     assert payload["target"] == "https://portal.test/items?<redacted>"
 
 
+def test_credentials_in_a_url_never_reach_the_journal(tmp_path, fake_clock):
+    """The proxy URL is the common credential-in-a-URL shape, and it has no query string
+    to strip, so a redactor keyed on the query alone writes the password out in full."""
+    journal = _journal(tmp_path, fake_clock)
+    journal.event(
+        "canary.result",
+        status="OK",
+        target="http://scrape_user:hunter2@proxy.example.com:8080/items.html",
+    )
+    journal.close()
+    raw = (tmp_path / "run.jsonl").read_bytes()
+    payload = read_run(tmp_path / "run.jsonl").entries[0].payload
+    assert b"hunter2" not in raw
+    assert b"scrape_user" not in raw
+    assert payload["target"] == "http://<redacted>@proxy.example.com:8080/items.html"
+
+
+def test_a_url_carrying_credentials_inside_a_longer_message_is_redacted_in_place(
+    tmp_path, fake_clock
+):
+    journal = _journal(tmp_path, fake_clock)
+    journal.event(
+        "error",
+        level="ERROR",
+        error="TransientError",
+        message="navigation failed: ERR_TUNNEL_FAILED at http://u:hunter2@proxy.test/items.html",
+    )
+    journal.close()
+    payload = read_run(tmp_path / "run.jsonl").entries[0].payload
+    assert b"hunter2" not in (tmp_path / "run.jsonl").read_bytes()
+    assert payload["message"] == (
+        "navigation failed: ERR_TUNNEL_FAILED at http://<redacted>@proxy.test/items.html"
+    )
+
+
+def test_a_fragment_is_dropped_without_inventing_a_query_string(tmp_path, fake_clock):
+    journal = _journal(tmp_path, fake_clock)
+    journal.event("canary.result", status="OK", target="https://portal.test/items#row-4")
+    journal.close()
+    payload = read_run(tmp_path / "run.jsonl").entries[0].payload
+    assert payload["target"] == "https://portal.test/items"
+
+
+def test_a_url_with_nothing_to_hide_survives_unchanged(tmp_path, fake_clock):
+    journal = _journal(tmp_path, fake_clock)
+    journal.event("canary.result", status="OK", target="http://127.0.0.1:8000/items.html")
+    journal.close()
+    payload = read_run(tmp_path / "run.jsonl").entries[0].payload
+    assert payload["target"] == "http://127.0.0.1:8000/items.html"
+
+
 def test_a_recorded_artifact_path_exists(tmp_path, fake_clock):
     shot = tmp_path / "artifacts" / "login.png"
     shot.parent.mkdir(parents=True)
