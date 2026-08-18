@@ -1,0 +1,88 @@
+{
+  "baseline": [
+    "0|main|data-testid=items",
+    "1|h1|",
+    "1|p|",
+    "1|table|data-testid=items-table",
+    "2|thead|",
+    "3|tr|data-testid=header-row",
+    "4|th|data-testid=col-name",
+    "4|th|data-testid=col-price",
+    "4|th|data-testid=col-stock",
+    "2|tbody|",
+    "3|tr|data-testid=item-row|x*",
+    "4|td|data-testid=name",
+    "4|td|data-testid=price",
+    "4|td|data-testid=stock"
+  ],
+  "container": "[data-testid=\"items\"]",
+  "fields": [
+    {
+      "allowed": [],
+      "name": "name",
+      "selector": "tr[data-testid=\"item-row\"] td[data-testid=\"name\"]",
+      "severity": "CRITICAL",
+      "shape": "text"
+    },
+    {
+      "allowed": [],
+      "name": "price",
+      "selector": "tr[data-testid=\"item-row\"] td[data-testid=\"price\"]",
+      "severity": "CRITICAL",
+      "shape": "decimal"
+    },
+    {
+      "allowed": [
+        "in-stock",
+        "low",
+        "out-of-stock"
+      ],
+      "name": "stock",
+      "selector": "tr[data-testid=\"item-row\"] td[data-testid=\"stock\"]",
+      "severity": "CRITICAL",
+      "shape": "enum"
+    }
+  ],
+  "format": 1,
+  "name": "items",
+  "ready_when": "tr[data-testid=\"item-row\"]",
+  "required": [
+    {
+      "max_count": 1,
+      "min_count": 1,
+      "selector": "[data-testid=\"items-table\"]",
+      "severity": "CRITICAL"
+    },
+    {
+      "max_count": 50,
+      "min_count": 5,
+      "selector": "tr[data-testid=\"item-row\"]",
+      "severity": "CRITICAL"
+    },
+    {
+      "max_count": 50,
+      "min_count": 5,
+      "selector": "tr[data-testid=\"item-row\"] td[data-testid=\"name\"]",
+      "severity": "CRITICAL"
+    },
+    {
+      "max_count": 50,
+      "min_count": 5,
+      "selector": "tr[data-testid=\"item-row\"] td[data-testid=\"price\"]",
+      "severity": "CRITICAL"
+    },
+    {
+      "max_count": 50,
+      "min_count": 5,
+      "selector": "tr[data-testid=\"item-row\"] td[data-testid=\"stock\"]",
+      "severity": "CRITICAL"
+    }
+  ],
+  "secret_selectors": [
+    "[data-testid=\"username\"]",
+    "[data-testid=\"password\"]"
+  ],
+  "signature": "6c9c2add1e0bda8d2308d8ddd4a2c0ecff9fe56a9078b3b8027f4e99a0e36f21",
+  "url": "http://127.0.0.1:8000/items.html",
+  "version": 1
+}
