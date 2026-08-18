@@ -275,13 +275,13 @@ entirely, because Tailwind JIT, CSS modules, styled-components, React `:r7:` ids
 on every build. Only `role`, `type`, `name`, `data-testid` and `aria-label` survive, and a value survives only if it
 matches `^[A-Za-z][A-Za-z0-9_-]{0,31}$`, so a build hashed value becomes `*` and keeps the anchor without the churn.
 Comments, doctype and the subtrees of `script`, `style`, `svg`, `noscript` and `template` are discarded, which makes
-an injected analytics tag and a hydration payload non events; a template's content is an inert fragment nobody renders,
-whatever `page.content()` serializes. Runs of identical adjacent siblings collapse to one line marked `x*`, with the
-number recorded separately in `counts`, because 12 rows and 13 rows are different trees and without this the false
-positive rate on any list page approaches 100 percent. The tree builder closes `td`, `th`, `tr`, `li`, `dt`, `dd`,
-`option` and `p` the way a browser does, because stdlib `html.parser` has no implied end tags and a portal that omits
-`</td>`, which is most of them, would otherwise nest every cell inside the first one. The check is scoped to a container selector, so ads, cookie banners,
-personalization and A/B variants outside it are invisible to it.
+an injected analytics tag and a hydration payload non events: a template's content is an inert fragment nobody
+renders, whatever `page.content()` serializes. Runs of identical adjacent siblings collapse to one line marked `x*`,
+with the number recorded separately in `counts`, because 12 rows and 13 rows are different trees and without this the
+false positive rate on any list page approaches 100 percent. The tree builder closes `td`, `th`, `tr`, `li`, `dt`,
+`dd`, `option` and `p` the way a browser does, because stdlib `html.parser` has no implied end tags and a portal that
+omits `</td>`, which is most of them, would otherwise nest every cell inside the first one. The check is scoped to a
+container selector, so ads, cookie banners, personalization and A/B variants outside it are invisible to it.
 
 **A number that reads two ways is refused, not guessed.** `parse_decimal` is the single parser the contract's field
 check and the job's extraction both call, so a value the canary passed is a value the job can read. It strips currency
@@ -337,8 +337,8 @@ different property from masking a value after the fact; on top of that, any key 
 `pass|secret|token|auth|cookie|session|api[_-]?key` becomes `<redacted>`, and every URL found in a value, including one
 sitting inside a longer error message, has its userinfo blanked, its query replaced and its fragment dropped. The
 userinfo is the part that actually leaks: `http://user:hunter2@proxy.example.com:8080/items.html` is how a scraping
-proxy is ordinarily configured, and it carries no query string for a query-only redactor to find. The real leak vector is
-not the JSON though, it is the screenshots, so the driver hands `contract.secret_selectors` to Playwright's
+proxy is ordinarily configured, and it carries no query string for a query-only redactor to find. The real leak vector
+is not the JSON though, it is the screenshots, so the driver hands `contract.secret_selectors` to Playwright's
 `page.screenshot(mask=[...], mask_color="#000000")` ([docs](https://playwright.dev/python/docs/api/class-page)).
 `docs/evidence-login-masked.png` is the committed screenshot of the login page with both credential fields filled,
 which makes that checkable in one image. The demo credential hint line is masked too, and a test walks the login page
@@ -350,23 +350,24 @@ evidence of the opposite of what it claims.
 ask one to redeploy on cue, and scraping one from a public repo's CI is a terms of service and flakiness problem on
 every run. Precedent: Zyte runs [toscrape.com](https://toscrape.com/) as an official scraping sandbox, and
 the-internet.herokuapp.com plays that role for Selenium. The server is `http.server.ThreadingHTTPServer`, not bare
-`HTTPServer`, because the stdlib docs say the threading version exists to handle "web browsers pre-opening sockets, on
-which HTTPServer would wait indefinitely" ([docs](https://docs.python.org/3/library/http.server.html)); single threaded plus
-Chromium is an intermittent hang presenting as a Playwright timeout. It binds `127.0.0.1` on port 0 and reads the port
-back so CI legs cannot collide, and navigates to that literal address rather than `localhost`, which can resolve to
-`::1` first and stall. The login page is a client side stub: `app.js` compares against hardcoded demo credentials and
+`HTTPServer`, because the stdlib docs say the threading version exists to handle "web browsers pre-opening sockets,
+on which HTTPServer would wait indefinitely" ([docs](https://docs.python.org/3/library/http.server.html)); single
+threaded plus Chromium is an intermittent hang presenting as a Playwright timeout. It binds `127.0.0.1` on port 0 and
+reads the port back so CI legs cannot collide, and navigates to that literal address rather than `localhost`, which
+can resolve to `::1` first and stall. The login page is a client side stub: `app.js` compares against hardcoded demo credentials and
 sets a `sessionStorage` flag. It is not authentication and nothing here claims it is.
 
 **The `PageDriver` Protocol has one implementer and earns its place today.** The unit suite drives `canary.run`, the
-breaker, the journal and the whole demo job through a `FakeDriver` in `tests/conftest.py`, which is the entire reason the 7 tests in
-`tests/test_e2e.py` are the only ones in this repo that need a browser. Driver agnosticism across real drivers is a non-goal, not a promise. It is sync:
-pytest-playwright ships sync fixtures only and async needs the separate `pytest-playwright-asyncio` package
-([test runners](https://playwright.dev/python/docs/test-runners)), the workflow is sequential so async buys no wall
-clock time, and async would push `async def` through every public signature. The cost is in
-[Limitations](#limitations).
+breaker, the journal and the whole demo job through a `FakeDriver` in `tests/conftest.py`, which is why the 7 tests in
+`tests/test_e2e.py` are the only ones in this repo that need a browser. Driver agnosticism across real drivers is a
+non-goal, not a promise. It is sync: pytest-playwright ships sync fixtures only and async needs the separate
+`pytest-playwright-asyncio` package ([test runners](https://playwright.dev/python/docs/test-runners)), the workflow is
+sequential so async buys no wall clock time, and async would push `async def` through every public signature. The cost
+is in [Limitations](#limitations).
 
-**The breaker, journal and backoff shape recur across the Q...Z toolset** as a deliberate personal standard, tuned
-per domain rather than copied: what changes is the taxonomy of what is retryable, and what one logical action is.
+**The recurring shape is tuned per domain rather than copied.** Between the sibling repos what changes is the
+taxonomy of what counts as retryable and the definition of one logical action, which is why there is no shared library
+underneath them: the parts that would be shared are the parts each domain has to answer for itself.
 
 ## Prior art
 
