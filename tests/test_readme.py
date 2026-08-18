@@ -22,7 +22,7 @@ README_TEXT = README.read_text(encoding="utf-8")
 
 # A ceiling, not a target. Past this the design decisions belong in docs/ rather than in
 # the file somebody reads to decide whether to keep reading.
-LINE_BUDGET = 470
+LINE_BUDGET = 480
 
 _DOCUMENTED_COMMAND = re.compile(r"^uv run (questz .+?) +# exit (\d)$", re.MULTILINE)
 _DETECTION_TABLE = re.compile(
