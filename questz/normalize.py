@@ -234,12 +234,16 @@ def _sibling_run(
     counts: list[tuple[str, int]] = []
     start = 0
     while start < len(rendered):
-        block, block_counts = rendered[start]
+        block, _ = rendered[start]
         end = start + 1
         while end < len(rendered) and rendered[end][0] == block:
             end += 1
         run = end - start
-        counts.extend(block_counts)
+        # Every block in the run, not only the first: two product groups serialize to the
+        # same lines whatever their inner list lengths, so dropping the rest of the counts
+        # is the one place the collapse would hide a difference completely.
+        for _, block_counts in rendered[start:end]:
+            counts.extend(block_counts)
         if run > 1:
             # The marker, never the number: a 12 row list and a 13 row list must serialize
             # identically or the canary trips on every list page it ever sees.

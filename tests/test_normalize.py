@@ -43,6 +43,21 @@ def test_adding_a_row_keeps_the_signature_and_changes_the_counts(testsite_html):
     assert [count for _, count in observed.counts] == [13]
 
 
+def test_a_collapsed_run_keeps_every_block_s_nested_counts():
+    """Run equality is tested on lines, and a nested run's length lives only in the counts,
+    so keeping the first block's counts alone made two product groups with different item
+    counts indistinguishable in every output the tool produces."""
+
+    def groups(*lengths: int):
+        body = "".join(f"<section><ul>{'<li></li>' * n}</ul></section>" for n in lengths)
+        return normalize(f'<div data-testid="c">{body}</div>', container='[data-testid="c"]')
+
+    same, diverged = groups(3, 3), groups(3, 9)
+    assert same.lines == diverged.lines
+    assert [count for _, count in same.counts] == [3, 3, 2]
+    assert [count for _, count in diverged.counts] == [3, 9, 2]
+
+
 def test_comments_and_scripts_are_discarded():
     plain = normalize('<div data-testid="c"><p></p></div>', container='[data-testid="c"]')
     noisy = normalize(

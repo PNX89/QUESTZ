@@ -265,8 +265,10 @@ is wrong by 1000x. A contract whose target ships values like that declares `deci
 **Contracts are JSON, not YAML, and the baseline is recorded rather than hand written.** The core has no third party
 dependencies, stdlib `tomllib` is read only so `record` could not write TOML, and PyYAML would be a dependency for one
 file; `json.dumps(..., indent=2, sort_keys=True)` keeps a contract diff line oriented. `questz canary record` derives
-signature, baseline and counts from a page you have decided is good, pins every selector to the count observed there,
-and tells you to widen the ranges by hand. That is where the fingerprint comes from.
+the signature and the baseline from a page you have decided is good, pins every selector to the count observed there,
+and tells you to widen the ranges by hand. That is where the fingerprint comes from. Run lengths are reported in
+`counts` rather than pinned: what a count is allowed to be belongs in a `required` range a human widened, and
+fingerprinting list lengths puts every list page back in the false positive column.
 
 **Four typed outcomes, all closed.** Reporting every failure as a DOM change would be a false alarm on the very axis
 this repo claims competence in. So `UNAVAILABLE` (navigation raised, or a status outside 200 to 299), `BLOCKED` (2xx,
