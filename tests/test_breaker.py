@@ -90,6 +90,40 @@ def test_two_failures_in_four_calls_do_not_open_and_three_do(fake_clock):
     assert other.state is BreakerState.OPEN
 
 
+def test_scattered_failures_on_a_healthy_target_never_open_the_breaker(fake_clock):
+    """A job every five minutes for four days, one transient failure in a hundred, never
+    two in a row. A total that only ever grows opens three times over that run for no
+    reason, and the operator learns to ignore the alert."""
+    breaker = _breaker(clock=fake_clock)
+    for call in range(1200):
+        if call % 100 == 99:
+            breaker.record_failure("blip")
+        else:
+            breaker.record_success()
+        assert breaker.state is BreakerState.CLOSED, call
+    assert breaker.recorded_calls == FAST.sliding_window_size
+    assert breaker.total_failures <= 1
+
+
+def test_a_failure_ages_out_of_the_window(fake_clock):
+    policy = BreakerPolicy(
+        consecutive_failure_threshold=99,
+        total_failure_threshold=2,
+        failure_rate_threshold=1.0,
+        minimum_number_of_calls=100,
+        sliding_window_size=4,
+    )
+    breaker = _breaker(policy, clock=fake_clock)
+    breaker.record_failure("boom")
+    for _ in range(4):
+        breaker.record_success()
+    assert breaker.total_failures == 0
+    breaker.record_failure("boom")
+    breaker.record_success()
+    breaker.record_failure("boom")
+    assert breaker.state is BreakerState.OPEN, "two failures inside one window is still a burst"
+
+
 def test_the_rate_is_not_evaluated_below_the_minimum_number_of_calls(fake_clock):
     breaker = _breaker(ONLY_RATE, clock=fake_clock)
     breaker.record_failure("boom")
@@ -257,6 +291,21 @@ def test_a_corrupt_store_starts_closed_with_a_journaled_warning(tmp_path, fake_c
     name, level, payload = journal_sink.events[0]
     assert (name, level) == ("breaker.state", "WARN")
     assert "corrupt breaker store" in str(payload["reason"])
+
+
+def test_the_window_survives_across_breaker_instances(tmp_path, fake_clock):
+    store = BreakerStore(tmp_path / "breaker.json")
+    first = _breaker(ONLY_RATE, clock=fake_clock, store=store)
+    first.record_failure("boom")
+    first.record_success()
+    first.record_failure("boom")
+    assert '"window": "x.x"' in (tmp_path / "breaker.json").read_text(encoding="utf-8")
+
+    second = _breaker(ONLY_RATE, clock=fake_clock, store=store)
+    assert second.recorded_calls == 3
+    assert second.total_failures == 2
+    second.record_failure("boom")
+    assert second.state is BreakerState.OPEN, "the restored window is what the rate reads"
 
 
 def test_a_store_that_is_not_utf_8_starts_closed_instead_of_crashing_the_job(

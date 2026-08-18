@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 import random
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -45,6 +46,10 @@ class BreakerPolicy:
     minimum_number_of_calls: int = 4
     cooldown_seconds: float = 60.0
     half_open_max_calls: int = 1
+    # Resilience4j's slidingWindowSize, and it is load bearing rather than decorative: a
+    # counter that only ever grows opens on a healthy target eventually, because a job
+    # running every five minutes accumulates the fifth unrelated blip inside a week.
+    sliding_window_size: int = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,24 +62,46 @@ class RetryPolicy:
     rng: random.Random = field(default_factory=lambda: random.Random(0))
 
 
+_FAILURE = "x"
+_SUCCESS = "."
+
+
+def _encode(window: Iterable[bool]) -> str:
+    """The window as "..x..x": one character per recorded call, oldest first, so a human
+    opening the state file can see the shape of the trouble."""
+    return "".join(_FAILURE if failed else _SUCCESS for failed in window)
+
+
+def _decode(text: str) -> list[bool]:
+    if set(text) - {_FAILURE, _SUCCESS}:
+        raise ValueError(f"window {text!r} is not a run of {_SUCCESS!r} and {_FAILURE!r}")
+    return [char == _FAILURE for char in text]
+
+
 @dataclass(frozen=True, slots=True)
 class BreakerSnapshot:
     name: str
     state: BreakerState
     consecutive_failures: int
-    total_failures: int
-    recorded_calls: int
+    window: tuple[bool, ...]
     opened_at: float | None
     half_open_calls: int
+
+    @property
+    def recorded_calls(self) -> int:
+        return len(self.window)
+
+    @property
+    def total_failures(self) -> int:
+        return sum(self.window)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "consecutive_failures": self.consecutive_failures,
             "half_open_calls": self.half_open_calls,
             "opened_at": self.opened_at,
-            "recorded_calls": self.recorded_calls,
             "state": self.state.value,
-            "total_failures": self.total_failures,
+            "window": _encode(self.window),
         }
 
     @classmethod
@@ -84,8 +111,7 @@ class BreakerSnapshot:
             name=name,
             state=BreakerState(raw["state"]),
             consecutive_failures=int(raw["consecutive_failures"]),
-            total_failures=int(raw["total_failures"]),
-            recorded_calls=int(raw["recorded_calls"]),
+            window=tuple(_decode(str(raw["window"]))),
             opened_at=None if opened_at is None else float(opened_at),
             half_open_calls=int(raw["half_open_calls"]),
         )
@@ -154,8 +180,9 @@ class Breaker:
         self.name = name
         self.state = BreakerState.CLOSED
         self.consecutive_failures = 0
-        self.total_failures = 0
-        self.recorded_calls = 0
+        # The last `sliding_window_size` outcomes, True for a failure. Both counting rules
+        # read this, so an old failure ages out instead of accumulating forever.
+        self.window: deque[bool] = deque(maxlen=policy.sliding_window_size)
         self.opened_at: float | None = None
         self.half_open_calls = 0
         self._clock = clock
@@ -163,6 +190,14 @@ class Breaker:
         self._journal = journal
         if store is not None:
             self._restore(store)
+
+    @property
+    def recorded_calls(self) -> int:
+        return len(self.window)
+
+    @property
+    def total_failures(self) -> int:
+        return sum(self.window)
 
     def _restore(self, store: BreakerStore) -> None:
         try:
@@ -174,8 +209,8 @@ class Breaker:
             return
         self.state = restored.state
         self.consecutive_failures = restored.consecutive_failures
-        self.total_failures = restored.total_failures
-        self.recorded_calls = restored.recorded_calls
+        # Trimmed to this policy's window: the size can have changed since it was written.
+        self.window.extend(restored.window[-self.policy.sliding_window_size :])
         self.opened_at = restored.opened_at
         self.half_open_calls = restored.half_open_calls
 
@@ -184,8 +219,7 @@ class Breaker:
             name=self.name,
             state=self.state,
             consecutive_failures=self.consecutive_failures,
-            total_failures=self.total_failures,
-            recorded_calls=self.recorded_calls,
+            window=tuple(self.window),
             opened_at=self.opened_at,
             half_open_calls=self.half_open_calls,
         )
@@ -232,10 +266,11 @@ class Breaker:
         policy = self.policy
         if self.consecutive_failures >= policy.consecutive_failure_threshold:
             return True
+        # Failures inside the window, so this is a burst rule rather than a lifetime count.
         if self.total_failures >= policy.total_failure_threshold:
             return True
-        # The denominator is calls recorded so far, and the rate must be strictly exceeded:
-        # 2 of 4 does not trip at a 0.5 threshold, 3 of 4 does.
+        # The denominator is the calls in the window, and the rate must be strictly
+        # exceeded: 2 of 4 does not trip at a 0.5 threshold, 3 of 4 does.
         if self.recorded_calls < policy.minimum_number_of_calls:
             return False
         return self.total_failures / self.recorded_calls > policy.failure_rate_threshold
@@ -260,20 +295,18 @@ class Breaker:
     def record_success(self) -> None:
         if self.state is BreakerState.HALF_OPEN:
             self.consecutive_failures = 0
-            self.total_failures = 0
-            self.recorded_calls = 0
+            self.window.clear()
             self.half_open_calls = 0
             self.opened_at = None
             self._transition(BreakerState.CLOSED, "half open trial succeeded")
         else:
-            self.recorded_calls += 1
+            self.window.append(False)
             self.consecutive_failures = 0
         self._persist()
 
     def record_failure(self, reason: str) -> None:
-        self.recorded_calls += 1
+        self.window.append(True)
         self.consecutive_failures += 1
-        self.total_failures += 1
         if self.state is BreakerState.HALF_OPEN:
             self._open(f"half open trial failed: {reason}")
         elif self._should_open():

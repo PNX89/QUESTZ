@@ -275,12 +275,16 @@ named in the reason), `DRIFT` and `OK` are separate statuses with separate exit 
 `UNAVAILABLE` against the target, not the contract. Readiness is an explicit selector, never `networkidle`, which
 Playwright marks DISCOURAGED: "Don't use this method for testing, rely on web assertions to assess readiness instead."
 
-**The breaker vocabulary is Resilience4j's**, deliberately: `failureRateThreshold`, `minimumNumberOfCalls`,
-`permittedNumberOfCallsInHalfOpenState` ([docs](https://resilience4j.readme.io/docs/circuitbreaker)). The denominator
-is calls recorded so far, not a planned total, and the rate must be strictly exceeded once the minimum is reached: 2
-failures in 4 calls do not trip a 0.5 threshold, 3 in 4 do, and both sides are tested. Half open follows Fowler
-([reference](https://martinfowler.com/bliki/CircuitBreaker.html)): a permitted trial call, a success that zeroes the
-counters and closes, a failure that reopens and restarts the cooldown.
+**The breaker counts over a sliding window, not over all time.** The vocabulary is Resilience4j's:
+`failureRateThreshold`, `minimumNumberOfCalls`, `permittedNumberOfCallsInHalfOpenState`, `slidingWindowSize`
+([docs](https://resilience4j.readme.io/docs/circuitbreaker)). The window is why: a total that only accumulates opens on
+a perfectly healthy target eventually, because a job running every five minutes collects its fifth unrelated blip
+inside a week, and an operator who has been paged for that once stops reading the alert. So the denominator is the
+calls inside the window and the failure total is the failures inside it. This build's trip rule is its own, not
+inherited: the rate must be strictly exceeded once the minimum is reached, so 2 failures in 4 calls do not trip a 0.5
+threshold and 3 in 4 do, where Resilience4j itself opens at equal-or-greater. Both sides are tested. Half open
+follows Fowler ([reference](https://martinfowler.com/bliki/CircuitBreaker.html)): a permitted trial call, a success
+that empties the window and closes, a failure that reopens and restarts the cooldown.
 
 **One logical action is exactly one breaker outcome.** Retries live inside `Breaker.call` and the outcome is recorded
 once they are exhausted. Without that, `RetryPolicy(max_attempts=3)` against `consecutive_failure_threshold=3` opens
