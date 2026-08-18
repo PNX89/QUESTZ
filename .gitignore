@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+._*
+
+# Editors
+.idea/
+.vscode/
+
+# Generated run output
+artifacts/
+test-results/
+runs/
+
+# Screenshots are generated evidence; the one committed image lives under docs/
+*.png
+!docs/*.png

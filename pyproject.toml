@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "questz"
+version = "0.1.0"
+description = "Pre-flight reliability harness for browser automation: check that the page still matches a declared contract, and fail closed when it does not."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Quelin Zammit" }]
+keywords = ["scraping", "browser-automation", "playwright", "monitoring", "circuit-breaker"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+playwright = ["playwright>=1.62.0", "greenlet>=3.5.5"]
+
+[project.scripts]
+questz = "questz.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/PNX89/QUESTZ"
+Source = "https://github.com/PNX89/QUESTZ"
+
+# pytest-playwright is deliberately NOT in the dev group: it depends on playwright, which
+# depends on greenlet, and the unit CI matrix is meant to install zero C extensions.
+[dependency-groups]
+dev = ["pytest>=9.0.3", "ruff"]
+e2e = ["pytest-playwright"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["questz"]
+artifacts = [
+    "questz/testsite/**/*.html",
+    "questz/testsite/**/*.css",
+    "questz/testsite/**/*.js",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+testpaths = ["tests"]
+markers = ["e2e: needs a real chromium browser"]
