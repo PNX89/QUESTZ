@@ -313,7 +313,10 @@ proxy is ordinarily configured, and it carries no query string for a query-only 
 not the JSON though, it is the screenshots, so the driver hands `contract.secret_selectors` to Playwright's
 `page.screenshot(mask=[...], mask_color="#000000")` ([docs](https://playwright.dev/python/docs/api/class-page)).
 `docs/evidence-login-masked.png` is the committed screenshot of the login page with both credential fields filled,
-which makes that checkable in one image.
+which makes that checkable in one image. The demo credential hint line is masked too, and a test walks the login page
+asserting that every element rendering a credential is covered by a secret selector: a hint, a prefilled value or an
+error echoing input is how masking fails on a real portal, and an evidence screenshot with a password legible in it is
+evidence of the opposite of what it claims.
 
 **The target ships with the repo.** Drift detection cannot be regression tested against a third party site: you cannot
 ask one to redeploy on cue, and scraping one from a public repo's CI is a terms of service and flakiness problem on

@@ -81,7 +81,8 @@
   ],
   "secret_selectors": [
     "[data-testid=\"username\"]",
-    "[data-testid=\"password\"]"
+    "[data-testid=\"password\"]",
+    "[data-testid=\"credential-hint\"]"
   ],
   "signature": "6c9c2add1e0bda8d2308d8ddd4a2c0ecff9fe56a9078b3b8027f4e99a0e36f21",
   "url": "http://127.0.0.1:8000/items.html",

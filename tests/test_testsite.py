@@ -10,10 +10,11 @@ import urllib.error
 import urllib.request
 
 import pytest
+from pricewatch import DEMO_PASSWORD, DEMO_USER
 from scenarios import TABLE_ROWS
 
 from questz.canary import Contract
-from questz.normalize import matches
+from questz.normalize import matches, parse, select, walk
 from questz.testsite import TESTSITE_ROOT, VARIANTS, serve, variant_dir
 from questz.types import QuestzError
 
@@ -61,6 +62,24 @@ def test_the_contract_anchors_resolve_in_the_recorded_page(contract: Contract):
     assert len(matches(html, contract.ready_when)) == 12
     for selector in contract.secret_selectors:
         assert matches((TESTSITE_ROOT / "v1" / "login.html").read_text(encoding="utf-8"), selector)
+
+
+@pytest.mark.parametrize("variant", ["v1", "v2"])
+def test_every_element_showing_a_credential_is_a_secret_selector(contract: Contract, variant: str):
+    """The mask list has to cover what renders a credential, not only what accepts one. A
+    hint line, a prefilled value or an error echoing input is how masking fails on a real
+    portal, and a committed screenshot is only evidence if the list is complete."""
+    root = parse((TESTSITE_ROOT / variant / "login.html").read_text(encoding="utf-8"))
+    masked = {
+        id(element) for selector in contract.secret_selectors for element in select(root, selector)
+    }
+    showing = [
+        node
+        for node in walk(root)
+        if any(DEMO_PASSWORD in part or DEMO_USER in part for part in node.text_parts)
+    ]
+    assert showing, "this fixture is supposed to print the demo credentials somewhere"
+    assert [node.tag for node in showing if id(node) not in masked] == []
 
 
 def test_two_servers_on_port_zero_do_not_collide():
