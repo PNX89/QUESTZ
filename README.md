@@ -340,8 +340,13 @@ userinfo is the part that actually leaks: `http://user:hunter2@proxy.example.com
 proxy is ordinarily configured, and it carries no query string for a query-only redactor to find. The real leak vector
 is not the JSON though, it is the screenshots, so the driver hands `contract.secret_selectors` to Playwright's
 `page.screenshot(mask=[...], mask_color="#000000")` ([docs](https://playwright.dev/python/docs/api/class-page)).
-`docs/evidence-login-masked.png` is the committed screenshot of the login page with both credential fields filled,
-which makes that checkable in one image. The demo credential hint line is masked too, and a test walks the login page
+
+![The committed evidence screenshot: the demo login page with both credential fields filled and every element that
+renders a credential covered by a solid black mask](docs/evidence-login-masked.png)
+
+That image is committed at `docs/evidence-login-masked.png`, and it is the login page with both credential fields
+filled, which is what makes the claim checkable rather than asserted. The demo credential hint line is masked too, and
+a test walks the login page
 asserting that every element rendering a credential is covered by a secret selector: a hint, a prefilled value or an
 error echoing input is how masking fails on a real portal, and an evidence screenshot with a password legible in it is
 evidence of the opposite of what it claims.
