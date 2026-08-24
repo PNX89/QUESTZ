@@ -466,7 +466,19 @@ the binaries ([CI docs](https://playwright.dev/python/docs/ci)). See also `quest
 
 ## License
 
-MIT. Copyright (c) 2026 Quelin Zammit. Part of the Q...Z toolset: [QUACKZ](https://github.com/PNX89/QUACKZ)
-(backtest overfitting), [QUOTEZ](https://github.com/PNX89/QUOTEZ) (a read only market data MCP server),
-[QUELLZ](https://github.com/PNX89/QUELLZ) (prompt injection containment),
-[QUIDZ](https://github.com/PNX89/QUIDZ) (payment webhook and payout safety), and this one.
+MIT. Copyright (c) 2026 Quelin Zammit.
+
+<!-- toolset:start -->
+
+Part of the Q...Z toolset, all of it designing for the failure that does not announce itself:
+
+- [QUACKZ](https://github.com/PNX89/QUACKZ), deflating a backtest that only looks good because
+  it was picked out of two hundred.
+- [QUOTEZ](https://github.com/PNX89/QUOTEZ), market data an agent can read and cannot act on.
+- [QUELLZ](https://github.com/PNX89/QUELLZ), measuring what prompt-injection containment costs
+  in utility as well as in attack rate.
+- [QUIDZ](https://github.com/PNX89/QUIDZ), refusing the outbound payment that would have gone
+  out twice.
+- QUESTZ, this one: stopping a scraper before it writes a CSV from a page that changed shape.
+
+<!-- toolset:end -->

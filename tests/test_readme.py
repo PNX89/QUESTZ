@@ -23,6 +23,8 @@ README_TEXT = README.read_text(encoding="utf-8")
 # A ceiling, not a target. Past this the design decisions belong in docs/ rather than in
 # the file somebody reads to decide whether to keep reading.
 LINE_BUDGET = 480
+TOOLSET_START = "<!-- toolset:start -->"
+TOOLSET_END = "<!-- toolset:end -->"
 
 _DOCUMENTED_COMMAND = re.compile(r"^uv run (questz .+?) +# exit (\d)$", re.MULTILINE)
 _DETECTION_TABLE = re.compile(
@@ -121,7 +123,19 @@ def test_the_readme_counts_the_tests_that_need_a_browser() -> None:
 
 
 def test_the_readme_stays_inside_its_length_budget() -> None:
-    assert len(README_TEXT.splitlines()) <= LINE_BUDGET
+    """The budget polices prose, so the generated cross-link block does not count.
+
+    That block is written by `toolset_block.py` from one manifest shared across the toolset,
+    and it grows by a line every time another repository ships. Counting it would mean a
+    README that never changed could fail this test because a different repository was
+    published, and the author would then be tempted to raise the budget, which is the one
+    thing it exists to stop.
+    """
+    text = README_TEXT
+    start, end = text.find(TOOLSET_START), text.find(TOOLSET_END)
+    assert start != -1 and end > start, "the generated cross-link block is missing"
+    prose = text[:start] + text[end + len(TOOLSET_END) :]
+    assert len(prose.splitlines()) <= LINE_BUDGET
 
 
 @pytest.mark.parametrize("word", ["guarantee", "self healing locator", "prevents", "eliminates"])
