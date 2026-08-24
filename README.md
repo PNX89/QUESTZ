@@ -2,6 +2,8 @@
 
 **The site changed. The job stopped. That is the feature.**
 
+The one file worth opening first is [`questz/canary.py`](questz/canary.py): the two layer check and its four typed outcomes, every one failing closed.
+
 ![A real run: the contract checked against a page that changed shape, four findings, a structure diff, exit 1](docs/demo.svg)
 
 Cadence chosen, contents captured. The suite replays this check and compares it, so a frame showing a clean page
@@ -279,10 +281,9 @@ depth offset are one `structure_moved` finding rather than a list of deletions n
 entirely, because Tailwind JIT, CSS modules, styled-components, React `:r7:` ids and Angular `_ngcontent` hashes churn
 on every build. Only `role`, `type`, `name`, `data-testid` and `aria-label` survive, and a value survives only if it
 matches `^[A-Za-z][A-Za-z0-9_-]{0,31}$`, so a build hashed value becomes `*` and keeps the anchor without the churn.
-Comments, doctype and the subtrees of `script`, `style`, `svg`, `noscript` and `template` are discarded, which makes
-an injected analytics tag and a hydration payload non events: a template's content is an inert fragment nobody
-renders, whatever `page.content()` serializes. Runs of identical adjacent siblings collapse to one line marked `x*`,
-with the number recorded separately in `counts`, because 12 rows and 13 rows are different trees and without this the
+Comments, doctype and the subtrees of `script`, `style`, `svg`, `noscript` and `template` are discarded, so an
+injected analytics tag and a hydration payload are non events. Runs of identical adjacent siblings collapse to one
+line marked `x*` with the count kept separately, because 12 rows and 13 rows are different trees and without it the
 false positive rate on any list page approaches 100 percent. The tree builder closes `td`, `th`, `tr`, `li`, `dt`,
 `dd`, `option` and `p` the way a browser does, because stdlib `html.parser` has no implied end tags and a portal that
 omits `</td>`, which is most of them, would otherwise nest every cell inside the first one. The check is scoped to a
