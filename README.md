@@ -365,7 +365,11 @@ sets a `sessionStorage` flag. It is not authentication and nothing here claims i
 **The `PageDriver` Protocol has one implementer and earns its place today.** The unit suite drives `canary.run`, the
 breaker, the journal and the whole demo job through a `FakeDriver` in `tests/conftest.py`, which is why the 7 tests in
 `tests/test_e2e.py` are the only ones in this repo that need a browser. Driver agnosticism across real drivers is a
-non-goal, not a promise. It is sync: pytest-playwright ships sync fixtures only and async needs the separate
+non-goal, not a promise. `tests/test_driver.py` reaches the one path that used to need one: Chromium commits
+`chrome-error://chromewebdata` asynchronously after a refused navigation and a retry that starts first loses to it
+([playwright#35944](https://github.com/microsoft/playwright/issues/35944), closed with no fix). Waiting on a load state
+returns instantly while the old document is still committed, so the driver waits for the URL to change, and a stub page
+that commits only when waited on turns that race into a test instead of a rare red run. It is sync: pytest-playwright ships sync fixtures only and async needs the separate
 `pytest-playwright-asyncio` package ([test runners](https://playwright.dev/python/docs/test-runners)), the workflow is
 sequential so async buys no wall clock time, and async would push `async def` through every public signature. The cost
 is in [Limitations](#limitations).

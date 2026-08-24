@@ -27,25 +27,56 @@ class PlaywrightDriver:
     """Constructed from a page the caller already owns, so this module never starts or
     imports a browser."""
 
-    def __init__(self, page: Page, *, default_timeout_ms: int = 5000) -> None:
+    def __init__(
+        self, page: Page, *, default_timeout_ms: int = 5000, settle_timeout_ms: int = 1000
+    ) -> None:
         self._page = page
         self._default_timeout_ms = default_timeout_ms
+        self._settle_timeout_ms = settle_timeout_ms
         self.last_mask: tuple[str, ...] = ()
         page.set_default_timeout(default_timeout_ms)
 
     def goto(self, url: str) -> int:
         try:
             response = self._page.goto(url, wait_until="domcontentloaded")
-        except Exception:
-            # Chromium commits its error page asynchronously after a refused navigation.
-            # Letting that land before the caller retries is what stops the next attempt
-            # dying with "interrupted by another navigation to chrome-error://chromewebdata".
-            with contextlib.suppress(Exception):
-                self._page.wait_for_load_state("domcontentloaded")
+        except Exception as exc:
+            self._settle_after_refused_navigation(exc)
             raise
         # A navigation that produced no response (about:blank, a same document hash change)
         # is reported as 0 and read as UNAVAILABLE upstream.
         return 0 if response is None else response.status
+
+    def _settle_after_refused_navigation(self, exc: BaseException) -> None:
+        """Let the browser's error page commit before the caller's next attempt.
+
+        Chromium commits `chrome-error://chromewebdata` asynchronously after a refused
+        navigation, so a retry that starts first dies with "interrupted by another navigation
+        to chrome-error://chromewebdata", which says nothing at all about the site under test.
+        A known Chromium race rather than a Playwright defect: microsoft/playwright#35944 is
+        closed as P3 with no fix, and #13651 and #16686 are the same shape.
+
+        Waiting on a load state is NOT enough, and that is what was here before. If the error
+        navigation has not STARTED yet, the current document is already at `domcontentloaded`
+        and the wait returns instantly, leaving the window open. It closed rarely enough that
+        this suite went green for six days and then failed once on CI, on the one leg that
+        runs a browser, in the abort injection test. Playwright's own navigation guidance is
+        that waiting for the URL is the deterministic primitive, so that is what this does.
+
+        The predicate form is deliberate over the `chrome-error://**` glob: it waits for
+        whatever the refusal commits to, in any engine, rather than encoding one browser's
+        internal scheme. The bound is short and separate from the element timeout because this
+        path is already failing and must not add seconds to a real outage. Gated on `net::ERR`
+        so an ordinary timeout, where nothing is going to commit, still fails immediately.
+        """
+        if "net::ERR" not in str(exc):
+            return
+        before = self._page.url
+        with contextlib.suppress(Exception):
+            self._page.wait_for_url(
+                lambda current: current != before, timeout=self._settle_timeout_ms
+            )
+        with contextlib.suppress(Exception):
+            self._page.wait_for_load_state("domcontentloaded")
 
     def wait_for(self, selector: str, *, timeout_ms: int = 5000) -> bool:
         """Waits on an explicit readiness selector. Never on `networkidle`, which Playwright
