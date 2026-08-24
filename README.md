@@ -2,6 +2,11 @@
 
 **The site changed. The job stopped. That is the feature.**
 
+![A real run: the contract checked against a page that changed shape, four findings, a structure diff, exit 1](docs/demo.svg)
+
+Built from `docs/evidence/demo.txt`, a captured real run asserted against a live one. The cadence is chosen, the text
+is not. Whole run: [pnx89.github.io/QUESTZ](https://pnx89.github.io/QUESTZ/).
+
 [![CI](https://github.com/PNX89/QUESTZ/actions/workflows/ci.yml/badge.svg)](https://github.com/PNX89/QUESTZ/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%20to%203.14-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
