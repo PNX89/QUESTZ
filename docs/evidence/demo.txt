@@ -1,0 +1,39 @@
+questz canary: DRIFT
+contract: items v1
+target:   questz/testsite/v2/items.html
+
+findings (4):
+  CRITICAL  missing_selector   tr[data-testid="item-row"] td[data-testid="price"]
+                               expected 5 to 50, found 0
+  CRITICAL  missing_selector   tr[data-testid="item-row"] td[data-testid="stock"]
+                               expected 5 to 50, found 0
+  MAJOR     structure_removed
+                               expected every baseline node still present, found 4 gone
+                               th[data-testid=col-price], th[data-testid=col-stock], td[data-testid=price], td[data-testid=stock]
+  WARNING   structure_added
+                               expected no nodes outside the baseline, found 7 new
+                               th[data-testid=col-sku], th[data-testid=col-cost], td[data-testid=sku], td[data-testid=cost], and 3 more
+
+signature: baseline 6c9c2add1e0b observed defb7f9573c6
+counts:    tr[data-testid=item-row]=12, li[data-testid=stock]=12
+
+structure diff:
+  --- baseline
+  +++ observed
+  @@ -7,4 +7,4 @@
+   4|th|data-testid=col-name
+  -4|th|data-testid=col-price
+  -4|th|data-testid=col-stock
+  +4|th|data-testid=col-sku
+  +4|th|data-testid=col-cost
+   2|tbody|
+  @@ -12,3 +12,6 @@
+   4|td|data-testid=name
+  -4|td|data-testid=price
+  -4|td|data-testid=stock
+  +4|td|data-testid=sku
+  +4|td|data-testid=cost
+  +1|div|data-testid=stock-panel
+  +2|ul|
+  +3|li|data-testid=stock|x*
+exit 1

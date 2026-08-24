@@ -7,14 +7,17 @@ whose subject is drift detection it is also embarrassing.
 
 from __future__ import annotations
 
+import json
 import re
 import shlex
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import scenarios
 
-from questz import cli
+from questz import __version__, cli
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README = REPO_ROOT / "README.md"
@@ -147,3 +150,64 @@ def test_the_readme_makes_no_claim_it_cannot_keep(word: str) -> None:
     # somebody else's tool.
     allowed = 1 if word == "self healing locator" else 0
     assert lowered.count(word) == allowed
+
+
+def _escaped(text: str) -> str:
+    """The card is HTML, so the captured output appears in it escaped, not raw."""
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    )
+
+
+DEMO_COMMAND = (
+    "questz canary check --contract examples/contracts/items.json "
+    '--html questz/testsite/v2/items.html; echo "exit $?"'
+)
+
+
+def test_the_committed_demo_output_still_matches_a_live_run() -> None:
+    """The Pages card publishes this output, so a stale copy is a lie on a public page.
+
+    Run through a shell, because the documented command ends in `echo "exit $?"` and the exit
+    code is the part a CI job upstream of a data write actually consumes. A capture that
+    swallowed the non-zero exit would publish the drift report and drop its conclusion.
+    """
+    committed = (REPO_ROOT / "docs" / "evidence" / "demo.txt").read_text(encoding="utf-8")
+    live = subprocess.run(
+        DEMO_COMMAND, shell=True, capture_output=True, text=True, timeout=600, cwd=REPO_ROOT
+    ).stdout
+    assert committed == live, (
+        "docs/evidence/demo.txt no longer matches a live run. "
+        "Run: uv run python scripts/capture_evidence.py, then regenerate the card."
+    )
+    # DRIFT is the outcome this page exists to show. If the fixture pages ever stopped
+    # disagreeing, the card would still be fresh and would no longer demonstrate anything.
+    assert "exit 1" in committed and "questz canary: DRIFT" in committed
+
+
+def test_the_published_card_carries_the_output_it_claims_to() -> None:
+    card = (REPO_ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    demo = (REPO_ROOT / "docs" / "evidence" / "demo.txt").read_text(encoding="utf-8")
+    assert _escaped(demo.rstrip()) in card, "the card's terminal block is not the captured output"
+    assert "a test fails when it" in card
+    assert "/Users/" not in card and "/var/folders/" not in card
+
+
+def test_the_card_states_numbers_that_are_true_today() -> None:
+    facts = json.loads((REPO_ROOT / "docs" / "evidence" / "facts.json").read_text(encoding="utf-8"))
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-o", "addopts=", "--collect-only", "-q"],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=True,
+        cwd=REPO_ROOT,
+    )
+    match = re.search(r"^(\d+) tests? collected", result.stdout, re.MULTILINE)
+    assert match is not None, f"no collection total in:\n{result.stdout[-400:]}"
+    assert facts["tests"] == int(match.group(1)), "facts.json's test total is stale"
+    # Against the package version, never `git describe`: actions/checkout clones without tags.
+    assert facts["release"] == f"v{__version__}"
+    card = (REPO_ROOT / "site" / "index.html").read_text(encoding="utf-8")
+    assert f"<dd>{facts['tests']}</dd>" in card
+    assert f"<dd>{facts['release']}</dd>" in card
