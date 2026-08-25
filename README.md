@@ -495,5 +495,7 @@ Part of the Q...Z toolset, all of it designing for the failure that does not ann
 - [QUIDZ](https://github.com/PNX89/QUIDZ), refusing the outbound payment that would have gone
   out twice.
 - QUESTZ, this one: stopping a scraper before it writes a CSV from a page that changed shape.
+- [QUIZZ](https://github.com/PNX89/QUIZZ), answering what a statistic said at the time, and
+  refusing when it cannot.
 
 <!-- toolset:end -->
