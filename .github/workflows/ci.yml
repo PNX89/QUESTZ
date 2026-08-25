@@ -14,44 +14,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          enable-cache: true
-          # Sets UV_PYTHON, so `uv sync` cannot quietly pick the runner's system python.
-          python-version: "3.13"
-      - run: uv python install 3.13
-      - run: uv sync --locked --dev
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      # The wheel ships py.typed, so the Typed classifier is checked rather than asserted.
-      # No playwright extra here: the core has to type check without the browser package.
-      - run: uv run mypy
-
-  unit:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
-        with:
-          enable-cache: true
-          python-version: ${{ matrix.python-version }}
-      - run: uv python install ${{ matrix.python-version }}
-      # No playwright extra, so this matrix installs zero C extensions and the 3.14 leg
-      # carries no wheel availability risk.
-      - run: uv sync --locked --dev
-      - run: uv run pytest -m "not e2e" -q
+  # Lint, format, types and the unit suite across every supported interpreter, from the shared
+  # workflow in PNX89/.github, pinned to a tag rather than a moving branch.
+  #
+  # `--locked` is kept: this repository resolves against a committed lockfile so a run cannot
+  # quietly pick up a different resolution than the one that was tested.
+  #
+  # No playwright extra here, which is the point rather than an omission. The core has to lint,
+  # type check and pass its unit suite with zero C extensions installed, which is also what makes
+  # the 3.14 leg carry no wheel availability risk. The browser is a separate job below.
+  #
+  # mypy now runs on every leg rather than only on 3.13. That is a small increase and a real one:
+  # what type checks on 3.14 is not what type checks on 3.11.
+  #
+  # What the pipeline is for, and the five things it deliberately does not gate, is at
+  # https://github.com/PNX89/.github/blob/main/docs/adr/0001-what-ci-is-for.md
+  checks:
+    name: checks
+    uses: PNX89/.github/.github/workflows/checks.yml@v1
+    with:
+      python-versions: '["3.11", "3.12", "3.13", "3.14"]'
+      sync-args: "--locked --dev"
+      run-mypy: true
+      pytest-args: '-m "not e2e" -q'
 
   e2e:
     runs-on: ubuntu-latest
-    needs: unit
+    needs: checks
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
