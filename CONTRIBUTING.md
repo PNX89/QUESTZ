@@ -14,11 +14,10 @@ questz canary check --contract examples/contracts/items.json --html questz/tests
 Under a minute from clone to output, offline, with nothing to configure and no key to supply.
 If that is not true on your machine, that is a bug and worth an issue on its own.
 
-## The checks that gate every push
+## The checks you can run here
 
-These are read out of `.github/workflows/ci.yml` when this file is generated, so the list
-cannot drift away from what CI actually runs. All of them must pass locally before a pull
-request will go green:
+These are read out of `.github/workflows/ci.yml` when this file is generated, so no command
+here is one CI does not run:
 
 ```bash
 uv sync --locked --dev
@@ -32,6 +31,12 @@ uv run pytest -m e2e --tracing=retain-on-failure
 
 Run every one of them. Running only the test suite is the most common way to be surprised by a
 red badge: formatting and typing are gates here, not suggestions.
+
+## And the jobs that gate the pull request
+
+- checks
+
+One job, and the commands above are what it runs.
 
 ## Everything merges through a pull request
 
