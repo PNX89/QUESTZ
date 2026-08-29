@@ -39,7 +39,13 @@ Source = "https://github.com/PNX89/QUESTZ"
 # pytest-playwright is deliberately NOT in the dev group: it depends on playwright, which
 # depends on greenlet, and the unit CI matrix is meant to install zero C extensions.
 [dependency-groups]
-dev = ["mypy>=1.18.2", "pytest>=9.0.3", "ruff"]
+dev = [
+    "mypy>=1.18.2",
+    "pytest>=9.0.3",
+    "pyyaml>=6.0.3",
+    "ruff",
+    "types-pyyaml>=6.0.12.20260815",
+]
 e2e = ["pytest-playwright"]
 
 [tool.hatch.build.targets.wheel]
