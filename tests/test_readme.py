@@ -245,8 +245,47 @@ def test_the_readme_frame_is_built_from_the_captured_output() -> None:
         assert position < len(haystack), f"the frame draws a line the run never printed: {line!r}"
         position += 1
 
-    # ASCII only: test_every_text_file_in_the_repository_is_pure_ascii covers the tree, and this
-    # says why it matters here. The frame is generated, so a non ASCII glyph would arrive
-    # silently from a code change rather than from anyone typing one.
+    # ASCII only, and stricter than the tree scan in test_bytes.py, which admits the euro sign
+    # and four space characters because a scraped page carries them. None of those belongs in a
+    # generated image: the frame is built by code, so a non ASCII glyph would arrive from a code
+    # change rather than from anyone typing one, and it is served through a proxy that renders it
+    # where nobody can select the character and look at it. The comment that used to be here
+    # named a test in a sibling repository and said it covered this tree.
     assert svg.isascii()
     assert "<script" not in svg, "a README image is served through a proxy that strips script"
+
+
+def test_the_ci_shape_the_readme_describes_is_the_one_in_the_workflow() -> None:
+    """The paragraph used to name three jobs, `lint`, `unit` and `e2e`, and there are two.
+
+    Every command it listed did run, as steps inside one job, so nothing was broken and nothing
+    was untrue about the CHECKING. What was wrong was the shape: a reviewer told to look for
+    three jobs opens the Actions tab, finds two, and now has to work out which of the two claims
+    in front of them is the reliable one. That is a worse outcome than a missing sentence.
+
+    Parsed from the workflow rather than matched as a string, because a job name inside a comment
+    would satisfy a substring search, which is a defect this portfolio has already had once.
+    """
+    import yaml
+
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    jobs = set(workflow["jobs"])
+    assert jobs == {"checks", "e2e"}, f"the workflow now defines {sorted(jobs)}"
+
+    paragraph = " ".join(README.read_text(encoding="utf-8").split())
+    assert "CI is two jobs." in paragraph
+    for job in sorted(jobs):
+        assert f"`{job}`" in paragraph, f"the README does not name the {job} job"
+    assert "three jobs" not in paragraph
+    for absent in ("`lint`", "`unit`"):
+        assert absent not in paragraph, (
+            f"the README names a job called {absent}, and the workflow has no such job"
+        )
+
+    e2e = workflow["jobs"]["e2e"]
+    assert e2e["timeout-minutes"] == 10, "the README states a 10 minute timeout"
+    versions = str(workflow["jobs"]["checks"]["with"]["python-versions"])
+    for version in ("3.11", "3.12", "3.13", "3.14"):
+        assert version in versions and version in paragraph

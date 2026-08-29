@@ -472,11 +472,11 @@ uv run pytest -m e2e
 uv run questz demo --scenario degrade --deterministic
 ```
 
-CI is three jobs in one workflow: `lint`, which is ruff plus `mypy --strict`; `unit` on Python 3.11, 3.12, 3.13 and
-3.14 with no browser and so no C extensions in the matrix; and `e2e` on 3.13 with chromium, traces retained on failure
-and a 10 minute timeout. There
-is no browser binary cache step, because Playwright's own CI docs say restoring one takes about as long as downloading
-the binaries ([CI docs](https://playwright.dev/python/docs/ci)). See also `questz serve --help` and
+CI is two jobs. `checks` calls the shared workflow in [PNX89/.github](https://github.com/PNX89/.github) across Python
+3.11, 3.12, 3.13 and 3.14, running ruff, the formatter, `mypy --strict` and the suite without the e2e marker, so no leg
+of the matrix needs a browser or a C extension. `e2e` then runs on 3.13 alone with chromium, traces retained on failure
+and a 10 minute timeout. There is no browser binary cache step, because Playwright's own CI docs say restoring one
+takes about as long as downloading the binaries ([CI docs](https://playwright.dev/python/docs/ci)). See also `questz serve --help` and
 `questz canary record --help`.
 
 ## License
