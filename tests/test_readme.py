@@ -29,9 +29,13 @@ README_TEXT = README.read_text(encoding="utf-8")
 # Raised from 480 to 486 on 24-8-2026, and the reason is recorded because a budget quietly
 # raised is a budget that has stopped meaning anything. The six lines are the animated frame in
 # the first screenful and its caption, which the build standard requires every README to carry.
-# Nothing was trimmed to make room and nothing was allowed to grow: the next unexplained line
-# still fails this test.
-LINE_BUDGET = 486
+# Raised again from 486 to 499 on 30-8-2026, and it bought thirteen lines of checking. Eight are
+# the marker pairs around the hero output and the three scenario transcripts, which render as
+# nothing and exist so that those 82 lines are diffed against a live run instead of trusted; one
+# says so in the prose; four name the command that regenerates the evidence screenshot and what
+# now reads its pixels back. Nothing was trimmed to make room and nothing was allowed to grow:
+# the next unexplained line still fails this test.
+LINE_BUDGET = 499
 TOOLSET_START = "<!-- toolset:start -->"
 TOOLSET_END = "<!-- toolset:end -->"
 
@@ -40,6 +44,7 @@ _DETECTION_TABLE = re.compile(
     r"<!-- detection-table -->\n(.*?)\n<!-- /detection-table -->", re.DOTALL
 )
 _QUICKSTART = re.compile(r"<!-- quickstart -->\n```bash\n(.*?)```\n<!-- /quickstart -->", re.DOTALL)
+_HERO = re.compile(r"<!-- hero-output -->\n```console\n(.*?)```\n<!-- /hero-output -->", re.DOTALL)
 
 # Every source the README leans on for a technical claim. Presence only: the suite contacts
 # nothing outside this machine, so liveness is a release check, not a test.
@@ -189,6 +194,31 @@ def test_the_committed_demo_output_still_matches_a_live_run() -> None:
     # DRIFT is the outcome this page exists to show. If the fixture pages ever stopped
     # disagreeing, the card would still be fresh and would no longer demonstrate anything.
     assert "exit 1" in committed and "questz canary: DRIFT" in committed
+
+
+def test_the_hero_output_block_is_the_run_that_was_captured() -> None:
+    """The block a reader forms their opinion from, and the one nothing re-ran.
+
+    Four copies of this transcript exist. `docs/evidence/demo.txt` is diffed against a live run
+    by the test above, the Pages card is diffed against demo.txt, the animated frame is diffed
+    against demo.txt, and the README block a person actually reads was typed. It could be
+    falsified to say OK, nine findings and exit 0 with the whole suite green, on a repository
+    whose subject is documents drifting away from the code they describe.
+
+    Compared to demo.txt rather than to a fresh run of its own, because demo.txt is already
+    held to a live run and one capture is enough: this asserts the README quotes the capture.
+    """
+    found = _HERO.search(README_TEXT)
+    assert found is not None, "the hero output block is missing its markers"
+    quoted = found.group(1).splitlines()
+    assert quoted[0] == f"$ uv run {DEMO_COMMAND}", (
+        "the block does not open on the documented command"
+    )
+    committed = (REPO_ROOT / "docs" / "evidence" / "demo.txt").read_text(encoding="utf-8")
+    assert quoted[1:] == committed.splitlines(), (
+        "the README's hero transcript is no longer the captured output. "
+        "Run: uv run python scripts/capture_evidence.py, then paste docs/evidence/demo.txt back."
+    )
 
 
 def test_the_published_card_carries_the_output_it_claims_to() -> None:

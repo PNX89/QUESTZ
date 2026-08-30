@@ -107,6 +107,23 @@ def test_an_unsupported_selector_in_a_contract_exits_two_naming_the_fragment(
     assert "pseudo classes" in stderr
 
 
+def test_a_contract_selector_with_no_attribute_name_exits_two_rather_than_one(
+    capsys, contract_path, testsite_file, tmp_path
+):
+    """A malformed contract is an operator fix, and the code for that is 2. This one raised
+    an IndexError from inside the error message it was building, which cli.main does not
+    catch, so the process exited 1 and a scheduler read a typo in a JSON file as the site
+    having been redeployed."""
+    raw = json.loads(contract_path.read_text(encoding="utf-8"))
+    raw["container"] = '[="items-table"]'
+    broken = tmp_path / "no-attribute-name.json"
+    broken.write_text(json.dumps(raw), encoding="utf-8")
+    code, _, stderr = _check(capsys, broken, testsite_file("v1/items.html"))
+    assert code == cli.EXIT_USAGE
+    assert code != cli.EXIT_DRIFT
+    assert '[="items-table"]' in stderr
+
+
 def test_an_unreadable_html_file_exits_two(capsys, contract_path, tmp_path):
     code, _, stderr = _check(capsys, contract_path, tmp_path / "gone.html")
     assert code == cli.EXIT_USAGE

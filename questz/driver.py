@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-__all__ = ["PageDriver", "PlaywrightDriver"]
+__all__ = ["MASK_COLOUR", "PageDriver", "PlaywrightDriver"]
+
+#: What the browser paints over a secret selector. Named because the test that reads it back
+#: out of the file has to ask for the same colour the driver asked for.
+MASK_COLOUR = "#000000"
 
 
 class PageDriver(Protocol):
@@ -33,7 +37,11 @@ class PlaywrightDriver:
         self._page = page
         self._default_timeout_ms = default_timeout_ms
         self._settle_timeout_ms = settle_timeout_ms
-        self.last_mask: tuple[str, ...] = ()
+        # Every screenshot in order, with the mask it was taken with. A single `last_mask`
+        # was not enough: a job that photographs the page twice overwrote the record of the
+        # first shot, and the first is the one taken while the password field has a value in
+        # it, so the only mask anything asserted on was the one that mattered least.
+        self.shots: list[tuple[Path, tuple[str, ...]]] = []
         page.set_default_timeout(default_timeout_ms)
 
     def goto(self, url: str) -> int:
@@ -107,13 +115,19 @@ class PlaywrightDriver:
 
     def screenshot(self, path: Path, *, mask: Sequence[str] = ()) -> Path:
         """Screenshots, not JSON, are the real leak vector in an evidence journal, so the
-        contract's secret selectors are painted over by the browser before the file exists."""
-        self.last_mask = tuple(mask)
+        contract's secret selectors are painted over by the browser before the file exists.
+
+        What is recorded here is the argument, and the argument is not the evidence: reading
+        it back proves only that the caller asked. `tests/test_e2e.py` samples the pixels the
+        browser wrote, which is the half that can actually fail.
+        """
+        selectors = tuple(mask)
+        self.shots.append((path, selectors))
         path.parent.mkdir(parents=True, exist_ok=True)
         self._page.screenshot(
             path=str(path),
             full_page=True,
-            mask=[self._page.locator(selector) for selector in self.last_mask],
-            mask_color="#000000",
+            mask=[self._page.locator(selector) for selector in selectors],
+            mask_color=MASK_COLOUR,
         )
         return path

@@ -15,20 +15,28 @@ The browserless target is deliberate too: this runs against a committed fixture 
 card needs no browser, no network and no third party site that could change under it.
 
     uv run python scripts/capture_evidence.py
+    uv run python scripts/capture_evidence.py --screenshot   # also the masked login image
 """
 
 from __future__ import annotations
 
+import argparse
 import datetime
 import json
 import os
 import pathlib
 import re
+import struct
 import subprocess
 import sys
+import threading
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EVIDENCE = ROOT / "docs" / "evidence"
+SCREENSHOT = ROOT / "docs" / "evidence-login-masked.png"
+# The README embeds the screenshot at the width of the form, so the frame is the claim rather
+# than a screenful of white space under it.
+VIEWPORT = {"width": 1280, "height": 300}
 DEMO = (
     "questz canary check --contract examples/contracts/items.json "
     '--html questz/testsite/v2/items.html; echo "exit $?"'
@@ -87,8 +95,84 @@ def release() -> str:
     return tag
 
 
-def main() -> int:
+def capture_screenshot() -> dict[str, object]:
+    """Regenerate the committed evidence screenshot, and record where it painted.
+
+    THIS IS THE ONE COMMITTED ARTEFACT THAT HAD NO COMMAND BEHIND IT. It turns out to be
+    genuine: this reproduces the committed file byte for byte. That was not knowable before,
+    which is the whole complaint, and it only reproduces at the viewport the frame was taken
+    at, so the viewport is named above rather than left to whatever the default is that year.
+
+    The geometry travels with the image because that is what makes the image checkable on
+    another machine. Comparing the file to a fresh render would be comparing font rendering
+    across operating systems, which is the reason this suite compares no screenshots; measuring
+    the boxes on the reader's own layout instead has the same problem one step later. Boxes
+    recorded by the run that painted them do not.
+
+    Opt in, so the rest of this script stays browserless: the card's numbers and its terminal
+    block need no browser, no network and no third party site, and that is worth keeping.
+    """
+    from playwright.sync_api import sync_playwright
+
+    # examples/ ships with the checkout rather than the wheel, the same way `questz demo`
+    # reaches it.
+    sys.path.insert(0, str(ROOT / "examples"))
+    import pricewatch
+
+    from questz.canary import load
+    from questz.driver import MASK_COLOUR, PlaywrightDriver
+    from questz.testsite import serve
+
+    contract = load(ROOT / "examples" / "contracts" / "items.json")
+    server, base_url = serve("v1")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as engine:
+            browser = engine.chromium.launch()
+            try:
+                page = browser.new_page(viewport=VIEWPORT)
+                driver = PlaywrightDriver(page)
+                driver.goto(f"{base_url}/login.html")
+                driver.fill(pricewatch.USERNAME_FIELD, pricewatch.DEMO_USER)
+                driver.fill(pricewatch.PASSWORD_FIELD, pricewatch.DEMO_PASSWORD)
+                driver.screenshot(SCREENSHOT, mask=contract.secret_selectors)
+                boxes = []
+                for selector in contract.secret_selectors:
+                    box = page.locator(selector).bounding_box()
+                    if box is None:
+                        raise SystemExit(f"{selector} renders nothing, so it masked nothing")
+                    boxes.append({"selector": selector, **box})
+                ratio = page.evaluate("() => window.devicePixelRatio")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+    width, height = struct.unpack(">II", SCREENSHOT.read_bytes()[16:24])
+    return {
+        "colour": MASK_COLOUR,
+        "device_pixel_ratio": ratio,
+        "height": height,
+        "masked": boxes,
+        "width": width,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Capture the demo output and the card's numbers.")
+    parser.add_argument(
+        "--screenshot",
+        action="store_true",
+        help="also regenerate docs/evidence-login-masked.png, which needs a browser",
+    )
+    args = parser.parse_args(argv)
     EVIDENCE.mkdir(parents=True, exist_ok=True)
+    if args.screenshot:
+        recorded = capture_screenshot()
+        (EVIDENCE / "screenshot.json").write_text(
+            json.dumps(recorded, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(f"wrote {SCREENSHOT} and {EVIDENCE / 'screenshot.json'}")
     output = capture_demo()
     if "/Users/" in output or "/var/folders/" in output:
         raise SystemExit("the demo output carries a machine specific path, refusing")

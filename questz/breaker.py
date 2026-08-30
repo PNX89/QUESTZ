@@ -86,6 +86,7 @@ class BreakerSnapshot:
     window: tuple[bool, ...]
     opened_at: float | None
     half_open_calls: int
+    half_open_started_at: float | None = None
 
     @property
     def recorded_calls(self) -> int:
@@ -99,6 +100,7 @@ class BreakerSnapshot:
         return {
             "consecutive_failures": self.consecutive_failures,
             "half_open_calls": self.half_open_calls,
+            "half_open_started_at": self.half_open_started_at,
             "opened_at": self.opened_at,
             "state": self.state.value,
             "window": _encode(self.window),
@@ -107,6 +109,10 @@ class BreakerSnapshot:
     @classmethod
     def from_dict(cls, name: str, raw: dict[str, Any]) -> BreakerSnapshot:
         opened_at = raw["opened_at"]
+        # Read with `get`, unlike every key above it: a state file written before the trial
+        # deadline existed carries no start time, and a KeyError here is a CacheError, which
+        # would throw away the live state of a breaker that is doing its job.
+        started_at = raw.get("half_open_started_at")
         return cls(
             name=name,
             state=BreakerState(raw["state"]),
@@ -114,6 +120,7 @@ class BreakerSnapshot:
             window=tuple(_decode(str(raw["window"]))),
             opened_at=None if opened_at is None else float(opened_at),
             half_open_calls=int(raw["half_open_calls"]),
+            half_open_started_at=None if started_at is None else float(started_at),
         )
 
 
@@ -185,6 +192,9 @@ class Breaker:
         self.window: deque[bool] = deque(maxlen=policy.sliding_window_size)
         self.opened_at: float | None = None
         self.half_open_calls = 0
+        # When the trial in flight was granted, so a trial nobody came back from can be told
+        # from one that is still running.
+        self.half_open_started_at: float | None = None
         self._clock = clock
         self._store = store
         self._journal = journal
@@ -213,6 +223,7 @@ class Breaker:
         self.window.extend(restored.window[-self.policy.sliding_window_size :])
         self.opened_at = restored.opened_at
         self.half_open_calls = restored.half_open_calls
+        self.half_open_started_at = restored.half_open_started_at
 
     def snapshot(self) -> BreakerSnapshot:
         return BreakerSnapshot(
@@ -222,6 +233,7 @@ class Breaker:
             window=tuple(self.window),
             opened_at=self.opened_at,
             half_open_calls=self.half_open_calls,
+            half_open_started_at=self.half_open_started_at,
         )
 
     def _event(self, level: str, *, reason: str, previous: str | None = None) -> None:
@@ -260,6 +272,7 @@ class Breaker:
     def _open(self, reason: str) -> None:
         self.opened_at = self._clock.now().timestamp()
         self.half_open_calls = 0
+        self.half_open_started_at = None
         self._transition(BreakerState.OPEN, reason)
 
     def _should_open(self) -> bool:
@@ -275,6 +288,26 @@ class Breaker:
             return False
         return self.total_failures / self.recorded_calls > policy.failure_rate_threshold
 
+    def _trial_abandoned(self) -> bool:
+        """Whether the trial in flight is one nobody is coming back from.
+
+        The counter is persisted before the protected action runs and only the process that
+        took the trial ever clears it, so a SIGKILL, a scheduler timeout or a reboot during
+        the trial fetch left a state file that refused every later invocation for ever. That
+        is the one case the persistence exists for: the class docstring promises a two minute
+        process can still reach HALF_OPEN on its next invocation.
+
+        The cooldown is the bound, which is what Resilience4j spends
+        `maxWaitDurationInHalfOpenState` on. It is already the operator's answer to how long
+        this target gets to recover, and granting a second trial after it costs exactly what
+        the first one did. A state file written before this field existed carries no start
+        time and is read as abandoned for the same reason: the alternative is wedged for ever.
+        """
+        if self.half_open_started_at is None:
+            return True
+        elapsed = self._clock.now().timestamp() - self.half_open_started_at
+        return elapsed >= self.policy.cooldown_seconds
+
     def allow(self) -> None:
         if self.state is BreakerState.OPEN:
             remaining = self._cooldown_remaining()
@@ -286,10 +319,14 @@ class Breaker:
             self._transition(BreakerState.HALF_OPEN, "cooldown elapsed")
         if self.state is BreakerState.HALF_OPEN:
             if self.half_open_calls >= self.policy.half_open_max_calls:
-                raise CircuitOpenError(
-                    f"breaker {self.name!r} is HALF_OPEN and a trial call is already in flight"
-                )
+                if not self._trial_abandoned():
+                    raise CircuitOpenError(
+                        f"breaker {self.name!r} is HALF_OPEN and a trial call is already in flight"
+                    )
+                self.half_open_calls = 0
+                self._event("WARN", reason="half open trial abandoned, granting another")
             self.half_open_calls += 1
+            self.half_open_started_at = self._clock.now().timestamp()
             self._persist()
 
     def record_success(self) -> None:
@@ -297,6 +334,7 @@ class Breaker:
             self.consecutive_failures = 0
             self.window.clear()
             self.half_open_calls = 0
+            self.half_open_started_at = None
             self.opened_at = None
             self._transition(BreakerState.CLOSED, "half open trial succeeded")
         else:

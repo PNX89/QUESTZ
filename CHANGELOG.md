@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `questz.breaker`: a half open trial now has a deadline. `allow` persists the trial counter
+  before the protected action runs and only the process holding the trial ever cleared it, so a
+  crash, a SIGKILL or a scheduler timeout during that fetch left a state file that refused every
+  later invocation for ever, which is the exact case the persistence exists for. A trial older
+  than the cooldown is read as abandoned and another is granted, the bound Resilience4j spends
+  `maxWaitDurationInHalfOpenState` on. The snapshot gained `half_open_started_at`, read
+  tolerantly so a state file written before it still loads.
+- `questz.canary.run`: a browser that breaks after the navigation succeeded is `UNAVAILABLE`.
+  Only `goto` was guarded, so a page that closed or navigated during the readiness wait or the
+  content read escaped as a traceback and exit 1, and 1 is the code that means DRIFT.
+- `questz.normalize`: a contract attribute selector with no name, `[="x"]`, raises
+  `ContractError` and exits 2 instead of an `IndexError` and exit 1. The operator check was a
+  substring test, and the empty string is a substring of every string.
+
+### Changed
+
+- `questz.driver.PlaywrightDriver` records `shots`, every `(path, mask)` pair in order, in place
+  of `last_mask`. A job takes more than one screenshot and only one of them is taken with a
+  password on the screen; the last mask was never that one.
+- `scripts/capture_evidence.py --screenshot` regenerates `docs/evidence-login-masked.png` and
+  records the boxes it painted, so the one committed artefact with no command behind it has one.
+  Without the flag the script stays browserless.
+
 ## [0.1.0] - 2026-08-18
 
 ### Added
@@ -48,4 +75,5 @@ parser guessing at values that read two ways, the breaker counting failures fore
 re-parented subtree reported as deletions, and a collapsed run discarding the nested counts
 of every block but the first.
 
+[Unreleased]: https://github.com/PNX89/QUESTZ/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/PNX89/QUESTZ/releases/tag/v0.1.0

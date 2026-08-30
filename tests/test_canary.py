@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 
 from questz.canary import check_html, parse_decimal, run
-from questz.types import DriftReport, Finding, TransientError
+from questz.types import SEVERITY_ORDER, DriftReport, Finding, TransientError
 
 COSMETIC = [
     "items.attr-order.html",
@@ -213,6 +213,13 @@ def test_prices_keep_their_currency_symbol_and_still_parse(testsite_html, contra
         ("12.345.678,90", "12345678.90"),
         ("12345.67", "12345.67"),
         ("1234", "1234"),
+        # A three digit fraction, which is the only width that reaches the rule about two
+        # different separator characters: every other row here is resolved before it, so the
+        # branch that reads this as 1234.567 rather than 1234567 was never run.
+        ("1.234,567", "1234.567"),
+        # A group separated by a space and nothing after it. Read as a decimal point this is
+        # 1.234, and the CSV would be out by a factor of a thousand.
+        ("1 234", "1234"),
     ],
 )
 def test_the_decimal_parser_reads_every_unambiguous_shape(text, expected):
@@ -239,6 +246,15 @@ def test_a_value_that_reads_two_ways_is_refused_rather_than_guessed(text):
 )
 def test_a_declared_decimal_separator_resolves_the_ambiguity(text, separator, expected):
     assert str(parse_decimal(text, decimal_separator=separator)) == expected
+
+
+@pytest.mark.parametrize("text", ["1,234.567", "1,234.56"])
+def test_a_value_that_contradicts_the_declared_separator_is_refused(text):
+    """The contract says the comma is this target's decimal point and the cell uses it between
+    two groups of digits, so the declaration and the value disagree. Refusing is the only safe
+    reading: dropping the separators and returning 1234567 is the thousandfold error again,
+    with a contract behind it saying it was checked."""
+    assert parse_decimal(text, decimal_separator=",") is None
 
 
 def test_an_ambiguous_price_is_a_finding_rather_than_a_thousandfold_error(testsite_html, contract):
@@ -273,6 +289,20 @@ def test_max_severity_orders_critical_above_major_above_warning():
     assert report("WARNING").max_severity == "WARNING"
     assert report("WARNING", "MAJOR").max_severity == "MAJOR"
     assert report("WARNING", "CRITICAL", "MAJOR").max_severity == "CRITICAL"
+    # In an order where a tie gives the wrong answer. `max` returns the first of equal keys,
+    # so listing the higher severity first let this pass with the lattice flattened, which is
+    # how MAJOR could be set equal to CRITICAL with nothing in the suite turning red.
+    assert report("MAJOR", "CRITICAL").max_severity == "CRITICAL"
+    assert report("WARNING", "MAJOR").max_severity == "MAJOR"
+    assert report("MAJOR", "WARNING").max_severity == "MAJOR"
+
+
+def test_the_severity_lattice_is_a_strict_ordering():
+    """`SEVERITY_ORDER` is what `_gates`, the finding sort and `max_severity` all read, so
+    `--fail-on` means nothing if two severities can be equal. It is asserted directly because
+    every use of it reads the winner and never the gap."""
+    assert SEVERITY_ORDER["CRITICAL"] > SEVERITY_ORDER["MAJOR"] > SEVERITY_ORDER["WARNING"]
+    assert sorted(SEVERITY_ORDER) == ["CRITICAL", "MAJOR", "WARNING"]
 
 
 def test_the_report_survives_a_json_round_trip(testsite_html, contract):
@@ -303,6 +333,34 @@ def test_a_non_2xx_status_is_unavailable(fake_driver, contract):
     assert report.status == "UNAVAILABLE"
     assert report.reason == "HTTP 503"
     assert report.findings == ()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        (
+            {"wait_error": RuntimeError("Page.wait_for_selector: Target page has been closed")},
+            "closed",
+        ),
+        (
+            {"html_error": RuntimeError("Page.content: Execution context was destroyed")},
+            "destroyed",
+        ),
+    ],
+)
+def test_a_browser_that_breaks_after_the_navigation_is_unavailable_not_a_traceback(
+    fake_driver, contract, kwargs, message
+):
+    """The guard used to end at `goto`, and the two calls after it are exactly where a page
+    that closes or navigates mid check raises. `run` then left as a raw exception, past
+    cli.main's QuestzError handler, and the process exited 1, which this tool's own exit code
+    table reads as the site having changed.
+    """
+    report = run(fake_driver(**kwargs), contract)
+    assert report.status == "UNAVAILABLE"
+    assert report.findings == ()
+    assert "RuntimeError" in report.reason
+    assert message in report.reason
 
 
 def test_an_interstitial_is_blocked_and_lists_what_was_served(fake_driver, testsite_html, contract):
