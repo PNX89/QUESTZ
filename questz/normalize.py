@@ -243,7 +243,7 @@ def _kept_attrs(element: Element) -> list[tuple[str, str]]:
         if name not in ATTR_ALLOWLIST:
             continue
         value = element.attrs[name]
-        kept.append((name, value if _STABLE_VALUE.match(value) else "*"))
+        kept.append((name, value if _STABLE_VALUE.fullmatch(value) else "*"))
     return kept
 
 

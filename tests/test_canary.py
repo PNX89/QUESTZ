@@ -145,14 +145,32 @@ def test_a_page_that_never_became_ready_stops_whatever_the_threshold_says(
 
 
 def test_a_node_that_really_left_is_still_reported_as_gone(testsite_html, contract):
-    """The move detector must not launder a deletion: only nodes with a matching line at a
-    different depth are re-nested, everything else is still missing."""
+    """The move detector must not launder a deletion, and the other way round: a node that
+    only changed position must not be laundered into a deletion plus an unrelated addition.
+    Only nodes with a matching line, at the same depth or a different one, are re-nested;
+    everything else is still missing."""
     html = testsite_html("v1/items.html").replace(
         '<th data-testid="col-stock" class="th">Availability</th>', "", 1
     )
     report = check_html(html, contract, target="removed")
     assert _finding(report, "structure_removed").found == "1 gone"
     assert "col-stock" in _finding(report, "structure_removed").detail
+
+    swapped = testsite_html("v1/items.html").replace(
+        '<th data-testid="col-price" class="th">Price</th>\n'
+        '      <th data-testid="col-stock" class="th">Availability</th>',
+        '<th data-testid="col-stock" class="th">Availability</th>\n'
+        '      <th data-testid="col-price" class="th">Price</th>',
+        1,
+    )
+    swap_report = check_html(swapped, contract, target="swapped")
+    # Both columns are still on the page; only their order changed. Reporting one of them
+    # as a MAJOR removal and an unrelated WARNING addition is what a reader on call is
+    # least equipped to act on: nothing to fix, and the wrong severity to trust that on.
+    assert [finding.kind for finding in swap_report.findings] == ["structure_moved"]
+    assert _finding(swap_report, "structure_moved").severity == "WARNING"
+    assert _finding(swap_report, "structure_moved").found == "1 reordered"
+    assert swap_report.max_severity == "WARNING"
 
 
 def test_the_findings_are_ordered_by_severity(testsite_html, contract):
@@ -380,6 +398,10 @@ def test_a_readiness_timeout_with_the_container_present_is_drift(
     report = run(fake_driver(html_text=html, ready=False), contract)
     assert report.status == "DRIFT"
     assert _finding(report, "missing_selector", contract.ready_when).severity == "CRITICAL"
+    # The readiness timeout took the elif branch in run(): the contract rules already named
+    # this selector, so it must not be named a second time as a MAJOR "not ready" finding.
+    selectors = [f.selector for f in report.findings if f.kind == "missing_selector"]
+    assert len(selectors) == len(set(selectors))
 
 
 def test_a_readiness_timeout_on_a_matching_page_still_fails_closed(

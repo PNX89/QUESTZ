@@ -86,6 +86,16 @@ def test_a_generated_attribute_value_collapses_to_a_star():
         container='[data-testid="c"]',
     )
     assert structure.lines[1] == "1|p|data-testid=*"
+    # `_STABLE_VALUE` is anchored `^...$`, and Python's `$` also matches just before a
+    # trailing newline, so a naive `.match` let a value through the pattern does not
+    # describe. A survived value goes straight into a `depth|tag|attrs` line, and this one
+    # would put a newline inside what the diff and the report both treat as a single line.
+    newline_terminated = normalize(
+        '<div data-testid="c"><p role="note\n"></p></div>',
+        container='[data-testid="c"]',
+    )
+    assert newline_terminated.lines[1] == "1|p|role=*"
+    assert "\n" not in newline_terminated.lines[1]
 
 
 def test_renaming_a_testid_changes_the_signature(testsite_html):

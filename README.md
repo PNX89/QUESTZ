@@ -6,8 +6,8 @@ The one file worth opening first is [`questz/canary.py`](questz/canary.py): the 
 
 ![A real run: the contract checked against a page that changed shape, four findings, a structure diff, exit 1](docs/demo.svg)
 
-Cadence chosen, contents captured. The suite replays this check and compares it, so a frame showing a clean page
-against a redeployed one would fail the build. Whole run: [pnx89.github.io/QUESTZ](https://pnx89.github.io/QUESTZ/).
+Four findings when a page renames its price and stock columns to sku and cost and moves stock into its own list.
+The suite replays this exact run and fails the build if the picture ever stops matching it. Whole run: [pnx89.github.io/QUESTZ](https://pnx89.github.io/QUESTZ/).
 
 [![CI](https://github.com/PNX89/QUESTZ/actions/workflows/ci.yml/badge.svg)](https://github.com/PNX89/QUESTZ/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%20to%203.14-blue)

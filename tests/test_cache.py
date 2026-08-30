@@ -24,13 +24,27 @@ def test_a_missing_key_is_a_miss(tmp_cache):
 
 def test_an_expired_entry_is_not_fresh(tmp_cache, fake_clock):
     tmp_cache.put("items", b"payload")
-    fake_clock.advance(61.0)
+    # Exactly at the TTL is still fresh: `age > self.ttl_seconds` is the freshness check, and
+    # an off by one turning it into `>=` would call this instant expired without anything
+    # else in the suite advancing the clock to precisely here.
+    fake_clock.advance(60.0)
+    entry = tmp_cache.get("items")
+    assert entry is not None
+    assert entry.stale is False
+    fake_clock.advance(1.0)
     assert tmp_cache.get("items") is None
 
 
 def test_stale_if_error_returns_the_value_with_its_age(tmp_cache, fake_clock):
     tmp_cache.put("items", b"payload")
-    fake_clock.advance(120.0)
+    # Exactly at the TTL, `get_stale_if_error` still reports a fresh hit: `age <=
+    # self.ttl_seconds` is that boundary, and an off by one turning it into `<` would call
+    # this instant stale.
+    fake_clock.advance(60.0)
+    fresh = tmp_cache.get_stale_if_error("items")
+    assert fresh is not None
+    assert fresh.stale is False
+    fake_clock.advance(60.0)
     entry = tmp_cache.get_stale_if_error("items")
     assert entry is not None
     assert entry.stale is True
@@ -40,7 +54,14 @@ def test_stale_if_error_returns_the_value_with_its_age(tmp_cache, fake_clock):
 
 def test_stale_if_error_refuses_past_max_stale_seconds(tmp_cache, fake_clock):
     tmp_cache.put("items", b"payload")
-    fake_clock.advance(3601.0)
+    # Exactly at max_stale_seconds the stale entry is still served: `age >
+    # self.max_stale_seconds` is the refusal check, and an off by one turning it into `>=`
+    # would refuse it one instant before it is actually due.
+    fake_clock.advance(3600.0)
+    still_served = tmp_cache.get_stale_if_error("items")
+    assert still_served is not None
+    assert still_served.stale is True
+    fake_clock.advance(1.0)
     assert tmp_cache.get_stale_if_error("items") is None
 
 
