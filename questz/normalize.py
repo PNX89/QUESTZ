@@ -92,15 +92,52 @@ class Element:
     children: list[Element] = field(default_factory=list)
     parent: Element | None = field(default=None, repr=False, compare=False)
     order: int = -1
-    text_parts: list[str] = field(default_factory=list)
+    #: Each own-text run, paired with the number of children already present when it arrived.
+    #: The pairing is what puts the text back in document order, and without it the order is
+    #: whatever the traversal happens to be.
+    text_parts: list[tuple[int, str]] = field(default_factory=list)
 
     @property
     def text(self) -> str:
-        """Own and descendant text with all whitespace collapsed to single spaces."""
-        parts: list[str] = []
-        for node in walk(self, include_self=True):
-            parts.extend(node.text_parts)
-        return " ".join("".join(parts).split())
+        """Own and descendant text, in DOCUMENT ORDER, with whitespace collapsed to single spaces.
+
+        THIS RETURNED A SCRAMBLED VALUE, and it is the defect this repository exists to catch.
+        It walked self first and then every descendant, so an element's own text always came
+        before its children's whatever the markup said. On a perfectly ordinary price cell:
+
+            <td>1,2<span>34</span>.56 EUR</td>
+
+        a human reads `1,234.56 EUR` and this returned `1,2.56 EUR34`. A canary comparing that to
+        an expected value sees a difference and reports the site as changed; a canary comparing
+        two scrambles of the same cell sees none and passes a wrong number through. Both are the
+        silent-wrong-data failure the whole repository is about.
+
+        Fixed by recording, with each own-text run, how many children were already there when it
+        arrived, then interleaving on the way out. That is the smallest change that restores
+        document order without a second parse.
+        """
+        return " ".join("".join(_in_order(self)).split())
+
+
+def _in_order(element: Element) -> list[str]:
+    """One element's text and its descendants', interleaved as the document has them.
+
+    Own-text runs carry the number of children that existed when they were read, so a run
+    recorded at position 2 belongs after the second child's subtree and before the third's.
+    """
+    parts: list[str] = []
+    by_position: dict[int, list[str]] = {}
+    for position, data in element.text_parts:
+        by_position.setdefault(position, []).append(data)
+
+    parts.extend(by_position.get(0, []))
+    for index, child in enumerate(element.children, start=1):
+        parts.extend(_in_order(child))
+        parts.extend(by_position.get(index, []))
+    # Anything recorded past the last child, which happens when markup closes oddly.
+    for position in sorted(p for p in by_position if p > len(element.children)):
+        parts.extend(by_position[position])
+    return parts
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +225,9 @@ class _TreeBuilder(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if self._skipped is None:
-            self._stack[-1].text_parts.append(data)
+            current = self._stack[-1]
+            # The child count AT THIS MOMENT is the text's position among its siblings.
+            current.text_parts.append((len(current.children), data))
 
 
 def parse(html: str) -> Element:
