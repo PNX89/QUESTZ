@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 
 import pytest
@@ -73,13 +74,18 @@ def test_the_total_threshold_opens_on_non_consecutive_failures(fake_clock):
 
 
 def test_two_failures_in_four_calls_do_not_open_and_three_do(fake_clock):
+    """The order matters and it used to be wrong here. The rate is only ever consulted from
+    inside `record_failure`, so a window whose last call is a success is judged at three
+    recorded calls and never at four, and the boundary this build differs from Resilience4j
+    on, equal to the threshold rather than above it, is then never reached at all."""
     breaker = _breaker(ONLY_RATE, clock=fake_clock)
-    breaker.record_failure("boom")
+    breaker.record_success()
     breaker.record_success()
     breaker.record_failure("boom")
-    breaker.record_success()
+    breaker.record_failure("boom")
     assert breaker.recorded_calls == 4
-    assert breaker.state is BreakerState.CLOSED
+    assert breaker.total_failures / breaker.recorded_calls == ONLY_RATE.failure_rate_threshold
+    assert breaker.state is BreakerState.CLOSED, "equal to the threshold is not above it"
 
     other = _breaker(ONLY_RATE, clock=fake_clock)
     other.record_failure("boom")
@@ -190,6 +196,58 @@ def test_a_second_half_open_trial_is_refused_while_one_is_in_flight(fake_clock):
     breaker.allow()
     with pytest.raises(CircuitOpenError, match="HALF_OPEN"):
         breaker.allow()
+
+
+def test_a_process_that_dies_mid_trial_does_not_wedge_the_breaker_for_ever(tmp_path, fake_clock):
+    """`allow` persists the trial counter before the protected action runs, and the only
+    things that ever clear it need the same process to survive the call. A SIGKILL, a
+    scheduler timeout or a reboot during the trial fetch left a state file that refused every
+    later invocation until somebody deleted it by hand, and that is precisely the case the
+    persistence exists for.
+    """
+    store = BreakerStore(tmp_path / "breaker.json")
+    first = _breaker(clock=fake_clock, store=store)
+    for _ in range(3):
+        first.record_failure("boom")
+    fake_clock.advance(61.0)
+    _breaker(clock=fake_clock, store=store).allow()  # the trial this process never finishes
+
+    fake_clock.advance(30.0)
+    with pytest.raises(CircuitOpenError, match="HALF_OPEN"):
+        _breaker(clock=fake_clock, store=store).allow()
+
+    fake_clock.advance(31.0)
+    recovered = _breaker(clock=fake_clock, store=store)
+    recovered.allow()
+    assert recovered.state is BreakerState.HALF_OPEN
+    recovered.record_success()
+    assert _breaker(clock=fake_clock, store=store).state is BreakerState.CLOSED
+
+
+def test_a_state_file_written_before_the_trial_deadline_is_not_wedged_by_it(tmp_path, fake_clock):
+    """A trial with no start time is one written by a version that did not record one. It
+    reads as abandoned rather than in flight, because the alternative is a breaker that never
+    grants another trial, and a new trial costs exactly what the cooldown already accepted."""
+    path = tmp_path / "breaker.json"
+    path.write_text(
+        json.dumps(
+            {
+                "items": {
+                    "consecutive_failures": 3,
+                    "half_open_calls": 1,
+                    "opened_at": 0.0,
+                    "state": "HALF_OPEN",
+                    "window": "xxx",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    breaker = _breaker(clock=fake_clock, store=BreakerStore(path))
+    assert breaker.state is BreakerState.HALF_OPEN
+    breaker.allow()
+    breaker.record_success()
+    assert breaker.state is BreakerState.CLOSED
 
 
 def test_one_failing_action_is_one_breaker_failure_however_many_retries(fake_clock):

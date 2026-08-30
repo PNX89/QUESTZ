@@ -667,8 +667,20 @@ def run(
         report = _unavailable(contract, f"HTTP {status_code}")
         _record_result(journal, report)
         return report
-    ready = driver.wait_for(contract.ready_when, timeout_ms=timeout_ms)
-    report = check_html(driver.html(), contract, target=contract.url, fail_on=fail_on)
+    try:
+        # Inside the guard, not after it. `PlaywrightDriver.wait_for` re-raises anything that
+        # is not a timeout and `html` is naked, so a page that closes or navigates under the
+        # check left `run` as a raw exception, past cli.main's QuestzError handler, out as a
+        # traceback carrying exit 1. Exit 1 is DRIFT, the one conclusion this tool must not
+        # reach when it was the browser that broke rather than the site.
+        ready = driver.wait_for(contract.ready_when, timeout_ms=timeout_ms)
+        html = driver.html()
+    except Exception as exc:
+        reason = f"page failed after navigation: {type(exc).__name__}: {exc}"
+        report = _unavailable(contract, reason)
+        _record_result(journal, report)
+        return report
+    report = check_html(html, contract, target=contract.url, fail_on=fail_on)
     if not ready:
         if report.status == "BLOCKED":
             never = f"readiness selector {contract.ready_when!r} never appeared"

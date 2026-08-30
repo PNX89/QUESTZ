@@ -235,7 +235,21 @@ def test_a_descendant_combinator_is_not_a_child_combinator():
 
 @pytest.mark.parametrize(
     "selector",
-    ["div, span", "div:hover", "*", "div + p", "div ~ p", 'td[data-testid^="pri"]', "div >"],
+    [
+        "div, span",
+        "div:hover",
+        "*",
+        "div + p",
+        "div ~ p",
+        'td[data-testid^="pri"]',
+        "div >",
+        # An attribute with no name at all. The operator check above it used to be a substring
+        # test, and "" is a substring of every string, so this reached the error message and
+        # indexed an empty string. An IndexError is not a ContractError: it escapes cli.main
+        # and exits 1, and 1 is the code this tool uses to say the site changed.
+        '[="items-table"]',
+        "[]",
+    ],
 )
 def test_unsupported_selector_syntax_raises_and_names_the_fragment(selector):
     with pytest.raises(ContractError) as caught:
