@@ -76,7 +76,9 @@ def test_every_element_showing_a_credential_is_a_secret_selector(contract: Contr
     showing = [
         node
         for node in walk(root)
-        if any(DEMO_PASSWORD in part or DEMO_USER in part for part in node.text_parts)
+        # `text_parts` pairs each own-text run with its position among the children, so that
+        # `Element.text` can put them back in document order. Only the text half is searched here.
+        if any(DEMO_PASSWORD in data or DEMO_USER in data for _, data in node.text_parts)
     ]
     assert showing, "this fixture is supposed to print the demo credentials somewhere"
     assert [node.tag for node in showing if id(node) not in masked] == []
