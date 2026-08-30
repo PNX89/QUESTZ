@@ -390,7 +390,11 @@ def _split(selector: str) -> list[tuple[str, str]]:
 def _parse_attr(body: str, selector: str) -> tuple[str, str | None]:
     name, sep, raw = body.partition("=")
     name = name.strip()
-    if name[-1:] in "~|^$*" and sep:
+    # `name and` rather than a slice: "" is a substring of every string, so an empty name
+    # satisfied this test, and the message below then indexed the empty string. The readable
+    # ContractError on the next line was never reached, and an IndexError escaping cli.main
+    # exits 1, which is the code that means DRIFT.
+    if name and name[-1] in "~|^$*" and sep:
         raise ContractError(
             f"unsupported attribute operator {name[-1] + '='!r} in contract selector {selector!r}"
         )

@@ -10,7 +10,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -41,10 +41,16 @@ class FakeDriver:
     status: int = 200
     ready: bool = True
     goto_error: Exception | None = None
+    # A page can close or navigate under the check after the navigation has succeeded, and
+    # playwright raises out of these two rather than returning anything useful.
+    wait_error: Exception | None = None
+    html_error: Exception | None = None
     visited: list[str] = field(default_factory=list)
     filled: list[tuple[str, str]] = field(default_factory=list)
     clicked: list[str] = field(default_factory=list)
-    last_mask: tuple[str, ...] = ()
+    # Same shape as PlaywrightDriver.shots, and for the same reason: a job takes more than
+    # one screenshot and only one of them is taken with a password on the screen.
+    shots: list[tuple[Path, tuple[str, ...]]] = field(default_factory=list)
 
     def goto(self, url: str) -> int:
         self.visited.append(url)
@@ -53,9 +59,13 @@ class FakeDriver:
         return self.status
 
     def wait_for(self, selector: str, *, timeout_ms: int = 5000) -> bool:
+        if self.wait_error is not None:
+            raise self.wait_error
         return self.ready
 
     def html(self, selector: str | None = None) -> str:
+        if self.html_error is not None:
+            raise self.html_error
         return self.html_text
 
     def fill(self, selector: str, value: str) -> None:
@@ -65,7 +75,7 @@ class FakeDriver:
         self.clicked.append(selector)
 
     def screenshot(self, path: Path, *, mask: tuple[str, ...] = ()) -> Path:
-        self.last_mask = tuple(mask)
+        self.shots.append((path, tuple(mask)))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"\x89PNG\r\n\x1a\n")
         return path
@@ -91,6 +101,26 @@ class RecordingJournal:
 
     def names(self) -> list[str]:
         return [name for name, _, _ in self.events]
+
+
+Shots = Sequence[tuple[Path, tuple[str, ...]]]
+
+
+@pytest.fixture
+def mask_of() -> Callable[[Shots, str], tuple[str, ...]]:
+    """The mask one named screenshot was taken with.
+
+    By name rather than by recency, which is what the assertion this replaces did: the job
+    photographs the login page and then the items page, so "the last mask" named the shot with
+    nothing to hide while the test was called after the one that had.
+    """
+
+    def look_up(shots: Shots, filename: str) -> tuple[str, ...]:
+        masks = [mask for path, mask in shots if path.name == filename]
+        assert len(masks) == 1, f"expected one {filename}, the driver took {len(masks)}"
+        return masks[0]
+
+    return look_up
 
 
 @pytest.fixture

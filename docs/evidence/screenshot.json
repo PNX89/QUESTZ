@@ -1,0 +1,29 @@
+{
+  "colour": "#000000",
+  "device_pixel_ratio": 1,
+  "height": 300,
+  "masked": [
+    {
+      "height": 21,
+      "selector": "[data-testid=\"username\"]",
+      "width": 153,
+      "x": 180.25,
+      "y": 137.078125
+    },
+    {
+      "height": 21,
+      "selector": "[data-testid=\"password\"]",
+      "width": 153,
+      "x": 407.09375,
+      "y": 137.078125
+    },
+    {
+      "height": 22.5,
+      "selector": "[data-testid=\"credential-hint\"]",
+      "width": 992,
+      "x": 144,
+      "y": 178.46875
+    }
+  ],
+  "width": 1280
+}

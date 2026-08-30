@@ -18,6 +18,7 @@ import scenarios
 from questz.breaker import Breaker, BreakerPolicy
 from questz.cache import Cache
 from questz.canary import check_html
+from questz.cli import STATUS_EXIT
 from questz.journal import Journal
 from questz.types import QuestzError
 
@@ -118,15 +119,19 @@ def test_an_interstitial_stops_the_job_with_the_blocked_exit_code(
 
 
 def test_the_credential_fields_are_masked_and_never_reach_the_journal(
-    fake_driver, testsite_html, contract, harness
+    fake_driver, testsite_html, contract, harness, mask_of
 ):
+    """Named for the login shot, so it has to look at the login shot. It used to read the
+    driver's last mask, and the job takes the items screenshot after the login one, so the
+    only assertion standing behind this name was about a page with no password on it."""
     driver = fake_driver(html_text=testsite_html("v1/items.html"))
     _job(driver, contract, harness)
     assert dict(driver.filled) == {
         '[data-testid="username"]': pricewatch.DEMO_USER,
         '[data-testid="password"]': pricewatch.DEMO_PASSWORD,
     }
-    assert driver.last_mask == contract.secret_selectors
+    assert mask_of(driver.shots, "login-masked.png") == contract.secret_selectors
+    assert mask_of(driver.shots, "items.png") == contract.secret_selectors
     assert pricewatch.DEMO_PASSWORD.encode() not in harness.journal_bytes
     assert (harness.out / "login-masked.png").read_bytes().startswith(b"\x89PNG")
 
@@ -150,6 +155,23 @@ def test_a_refused_fetch_falls_back_to_the_cache_and_says_how_old_it_is(
     # Three attempts inside one logical action still record exactly one breaker outcome.
     assert harness.breaker.snapshot().total_failures == 1
     assert len(harness.events("retry.attempt")) == 2
+
+
+def test_an_unreachable_site_with_nothing_cached_exits_three_rather_than_one(
+    fake_driver, contract, harness
+):
+    """The exit code is the product: `questz.cli` says "a scheduler has to page differently
+    for 'the site changed' and 'the site is down', so those are 1 and 3, never a shared non
+    zero". Nothing drove UNAVAILABLE all the way to an exit code, so its row in `STATUS_EXIT`
+    could be pointed at DRIFT with the whole suite green, and a dead site would then have
+    been reported to the scheduler as a redeployed one.
+    """
+    driver = fake_driver(goto_error=OSError("connection refused"))
+    result = _job(driver, contract, harness, login=False)
+    assert result.status == "UNAVAILABLE"
+    assert result.exit_code == 3
+    assert result.exit_code != STATUS_EXIT["DRIFT"]
+    assert not (harness.out / "items.csv").exists()
 
 
 def test_an_open_breaker_refuses_before_the_page_is_requested(
