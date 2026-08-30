@@ -447,12 +447,14 @@ def _depth_and_key(line: str) -> tuple[int, str]:
 def _reparented(
     removed: list[str], added: list[str]
 ) -> tuple[int, list[str], list[str], list[str]]:
-    """Separate the nodes that only moved by one constant depth from the rest.
+    """Separate the nodes that only moved by one constant depth, including zero, from the rest.
 
-    A wrapper `<div>` around a table re-nests its whole subtree one level deeper. Depth is
-    part of every serialized line, so the raw diff calls that eleven deletions and eleven
-    insertions and names nodes that are still on the page, which is worse than useless to
-    whoever got paged. One shift, reported once, is both true and actionable.
+    A wrapper `<div>` around a table re-nests its whole subtree one level deeper: depth is part
+    of every serialized line, so the raw diff calls that eleven deletions and eleven insertions
+    and names nodes that are still on the page. Two siblings swapping places is the same failure
+    at shift zero: `SequenceMatcher` has no notion of "moved", so it reports one of the pair as a
+    deletion and an insertion even though its serialized line, depth included, is byte for byte
+    unchanged. Either way, one shift, reported once, is both true and actionable.
     """
     pool = Counter(added)
     depths_by_key: dict[str, list[int]] = {}
@@ -464,7 +466,6 @@ def _reparented(
         for line in removed
         for depth_was, key in (_depth_and_key(line),)
         for depth_now in depths_by_key.get(key, ())
-        if depth_now != depth_was
     )
     if not shifts:
         return 0, [], removed, added
@@ -514,16 +515,14 @@ def _structure_findings(baseline: Sequence[str], observed: Sequence[str]) -> lis
             )
         )
     if moved:
-        direction = "deeper" if shift > 0 else "shallower"
+        if shift == 0:
+            expected, found = "every baseline node at the same position", f"{len(moved)} reordered"
+        else:
+            direction = "deeper" if shift > 0 else "shallower"
+            expected = "every baseline node at the same depth"
+            found = f"{len(moved)} re-nested {abs(shift)} level {direction}"
         findings.append(
-            Finding(
-                "structure_moved",
-                "WARNING",
-                None,
-                "every baseline node at the same depth",
-                f"{len(moved)} re-nested {abs(shift)} level {direction}",
-                detail=_node_detail(moved),
-            )
+            Finding("structure_moved", "WARNING", None, expected, found, detail=_node_detail(moved))
         )
     if added:
         findings.append(

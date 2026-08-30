@@ -46,7 +46,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a sliding window, Fowler half open semantics, state persisted to disk so `HALF_OPEN` is
   reachable across invocations, and an internal retry loop with AWS full jitter backoff.
   One logical action records exactly one breaker outcome.
-- `questz.cache`: a six step atomic write and an RFC 5861 `stale-if-error` policy that
+- `questz.cache`: an atomic write and an RFC 5861 `stale-if-error` policy that
   reports the age of every stale serve and journals it at WARN.
 - `questz.journal`: append only JSONL evidence with a default deny payload allowlist,
   secret key redaction, URL redaction covering credentials in the netloc as well as the
