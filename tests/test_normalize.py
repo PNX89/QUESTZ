@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from questz.normalize import diff, matches, normalize
+from questz.normalize import diff, matches, normalize, parse, walk
 from questz.types import ContractError
 
 CONTAINER = '[data-testid="items"]'
@@ -248,3 +248,38 @@ def test_matched_elements_carry_their_collapsed_text(testsite_html):
         testsite_html("v1/items.html"), 'tr[data-testid="item-row"] td[data-testid="price"]'
     )
     assert [element.text for element in found][:2] == ["€19.99", "€42.50"]
+
+
+@pytest.mark.parametrize(
+    ("markup", "reads_as"),
+    [
+        # The one that matters: a price with a styled group separator, which is how a real
+        # storefront marks up a number and exactly what this tool is pointed at.
+        ("<td>1,2<span>34</span>.56 EUR</td>", "1,234.56 EUR"),
+        # Child first, own text after.
+        ("<td><b>EUR</b> 99.50</td>", "EUR 99.50"),
+        # Alternating, which is where a single append-self-then-descendants pass goes worst.
+        ("<td>a<i>b</i>c<i>d</i>e</td>", "abcde"),
+        # Nested two deep, so the interleaving has to be recursive rather than one level.
+        ("<td>x<span>y<b>z</b>w</span>v</td>", "xyzwv"),
+    ],
+)
+def test_element_text_is_in_document_order(markup: str, reads_as: str) -> None:
+    """`Element.text` returned a SCRAMBLED value, which is this repository's own failure mode.
+
+    It walked self first and then every descendant, so an element's own text always preceded its
+    children's whatever the markup said. `<td>1,2<span>34</span>.56 EUR</td>` reads as
+    `1,234.56 EUR` to a human and came back as `1,2.56 EUR34`.
+
+    Both directions of that are bad and the second is worse. A canary comparing the scramble to
+    an expected value reports the site as changed, which wastes a morning. A canary comparing two
+    scrambles of the same cell sees no difference and passes a wrong number through, which is the
+    silent-wrong-data failure the whole repository exists to stop.
+
+    Nothing caught it because every fixture in the suite put an element's text either wholly
+    before or wholly after its children, so the traversal order and the document order agreed.
+    The cases below are chosen so that they disagree.
+    """
+    root = parse(f"<table><tr>{markup}</tr></table>")
+    cell = next(node for node in walk(root) if node.tag == "td")
+    assert cell.text == reads_as
